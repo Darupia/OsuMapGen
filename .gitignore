@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Generated test audio and outputs (never commit songs or generated maps)
+tests/fixtures/
+*.mp3
+*.ogg
+*.wav
+*.osz
+*.osu
+_scratch/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
