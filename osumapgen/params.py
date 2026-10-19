@@ -78,6 +78,8 @@ class MapParams:
     slider_force: float = 0.0     # minimum slider probability once a musical slider end exists
     slider_repeat: float = 0.18   # chance of a repeat slider on a long gap
     stream_fill: bool = False     # bridge small holes so 1/4 runs become long streams
+    max_tap_s: float = 12.0       # longest stretch of tapping before a slider/buzz-slider breather (s)
+    buzz_chance: float = 0.3      # share of breathers that are buzz sliders
 
     def level(self, intensity: float) -> float:
         return self.level_lo + (self.level_hi - self.level_lo) * intensity
@@ -109,6 +111,7 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.spacing *= 0.8
         p.slider_rate = min(0.9, p.slider_rate + 0.15)
         p.quarter_bias = -0.4
+        p.max_tap_s = 14.0
     elif style == "stream":
         # long, varied 1/4 streams with slider "kicks" between them
         p.level_hi += 0.6
@@ -121,6 +124,8 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_force = 0.2
         p.slider_min_gap = 0.74
         p.angle_sharpness *= 0.6
+        p.max_tap_s = 10.0
+        p.buzz_chance = 0.4
     elif style == "jump":
         # sparse rhythm, wide spacing, many sliders; difficulty comes from distance
         p.level_hi = min(p.level_hi, 2.0)
@@ -135,6 +140,8 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_min_gap = 0.74
         p.slider_repeat = 0.3
         p.max_distance = min(470.0, p.max_distance + 60)
+        p.max_tap_s = 12.0
+        p.buzz_chance = 0.25
     elif style == "tech":
         # odd angles, short and repeat sliders, small bursts
         p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
@@ -144,6 +151,8 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_repeat = 0.5
         p.quarter_bias = 0.1
         p.max_burst = min(p.max_burst, 4)
+        p.max_tap_s = 11.0
+        p.buzz_chance = 0.5
     elif style == "slider":
         p.slider_rate = 0.95
         p.slider_force = 0.8
@@ -152,6 +161,7 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.level_hi -= 0.2
         p.max_burst = min(p.max_burst, 3)
         p.quarter_bias = -0.3
+        p.max_tap_s = 15.0
     return p
 
 

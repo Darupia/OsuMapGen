@@ -46,3 +46,36 @@ def test_stream_runs_are_long_and_varied(analysed):
     assert runs, "stream preset produced no streams"
     assert max(runs) > 5, "streams are stuck at burst length"
     assert len(set(runs)) >= 3, f"stream lengths are not varied: {sorted(set(runs))}"
+
+
+def _longest_tap_stretch_s(sa, m):
+    """Longest run of tapping with no rest: a rest is a gap of 1.5+ beats or a slider held a full beat."""
+    beat = sa.timing[0].beat_ms
+    sm = m.difficulty.slider_multiplier
+    start = last_end = None
+    hold = False
+    best = 0.0
+    for o in m.objects:
+        if o.kind == "spinner":
+            start = None
+            continue
+        end = o.end_time_ms if o.kind == "slider" else o.time_ms
+        if start is None or hold or o.time_ms - last_end >= 1.5 * beat:
+            if start is not None:
+                best = max(best, last_end - start)
+            start = o.time_ms
+        hold = o.kind == "slider" and end - o.time_ms >= 0.97 * beat
+        last_end = end
+        if hold:
+            best = max(best, o.time_ms - start)
+            start = None
+    if start is not None:
+        best = max(best, last_end - start)
+    return best / 1000.0
+
+
+def test_tapping_stretches_are_capped(analysed):
+    sa, _ = analysed("full")
+    for style in ("stream", "jump", "tech", "mix"):
+        m = generator.generate(sa, 6.0, style, 1.0, 1)
+        assert _longest_tap_stretch_s(sa, m) <= 15.0, style

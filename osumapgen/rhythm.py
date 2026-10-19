@@ -211,6 +211,7 @@ def plan_rhythm(sa: SongAnalysis, P: SectionParams, sm: float, rng_for) -> List[
             _maybe_slider(sa, ev, g, nxt, L, p, sm, rng, tick_times)
         events.append(ev)
 
+    events = enforce_pacing(sa, events, P, sm, rng_for)
     _final_spinner(sa, events, P.base)
     _combos_and_hitsounds(sa, events, P)
     return events
@@ -271,12 +272,102 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     ev.end_tick_index = ev.tick_index + int(round(best_len * g.snap))
 
 
+def _event_end_ms(sa: SongAnalysis, ev: RhythmEvent) -> float:
+    """Time the player is released: slider end including every slide."""
+    ticks = sa.ticks
+    if ev.kind == "slider":
+        t0 = ticks[ev.tick_index].time_ms
+        return t0 + (ticks[ev.end_tick_index].time_ms - t0) * ev.repeats
+    if ev.kind == "spinner":
+        return ticks[ev.end_tick_index].time_ms
+    return ev.time_ms
+
+
+def _make_breather(sa: SongAnalysis, ev: RhythmEvent, p: MapParams, sm: float, rng) -> bool:
+    """Turn `ev` into a held slider (long, with slides) or a buzz slider (1/4-beat slides repeated).
+    Returns False when the timing/grid does not allow it."""
+    ticks = sa.ticks
+    g = ticks[ev.tick_index]
+    beat = _beat_ms(sa, g)
+    snap = g.snap
+    target = float(rng.choice([1.5, 2.0, 2.0, 3.0]))              # beats of rest for the hands
+    if rng.random() < p.buzz_chance:
+        seg, repeats = 1, int(np.clip(round(target * snap * 0.75), 4, 16))      # 1 tick per slide
+    else:
+        seg_beats = min(MAX_SLIDER_PX / (sm * 100.0), 1.0)
+        seg = max(1, int(seg_beats * snap + 1e-6))
+        repeats = max(1, int(round(target * snap / seg)))
+    end = ev.tick_index + seg
+    last = ev.tick_index + seg * repeats
+    if last >= len(ticks) or ticks[last].timing_index != g.timing_index:
+        return False
+    if ticks[last].time_ms > sa.music_end_ms:
+        return False
+    ev.kind = "slider"
+    ev.end_tick_index = end
+    ev.repeats = repeats
+    ev.stream = False
+    return True
+
+
+def enforce_pacing(sa: SongAnalysis, events: List[RhythmEvent], P: SectionParams, sm: float,
+                   rng_for) -> List[RhythmEvent]:
+    """Cap continuous tapping. A rest is a gap of a beat and a half or more, or a held slider of a full beat or more.
+    When a stretch runs past its limit the next good spot (a bar start, if one is near) becomes a long
+    or buzz slider and the notes it covers are dropped, so the player gets to breathe."""
+    ticks = sa.ticks
+    out: List[RhythmEvent] = []
+    start = prev_end = None
+    prev_hold = False
+    limit = 12000.0
+    rng, rng_section = None, None
+    pending: List[RhythmEvent] = list(events)
+    i = 0
+    while i < len(pending):
+        ev = pending[i]
+        i += 1
+        g = ticks[ev.tick_index]
+        s = sa.sections[g.section_index]
+        p = P.of(s.index)
+        if s.index != rng_section:
+            rng, rng_section = rng_for(20_000 + s.index), s.index
+        beat = _beat_ms(sa, g)
+        t = ev.time_ms
+        if ev.kind == "spinner":
+            out.append(ev)
+            start, prev_end, prev_hold = None, _event_end_ms(sa, ev), False
+            continue
+        if start is None or prev_hold or t - prev_end >= 1.5 * beat:
+            start = t
+            limit = p.max_tap_s * 1000.0 * float(rng.uniform(0.7, 1.0))
+        elapsed = t - start
+        nice = g.sub == 0 and g.beat_index % 4 == 0 and not ev.stream          # start of a bar, outside a stream
+        ok = g.sub == 0 and not ev.stream
+        convertible = ev.kind == "circle" or (ev.kind == "slider" and _event_end_ms(sa, ev) - t < 0.97 * beat)
+        if convertible and not s.is_break and (
+                (elapsed > 0.8 * limit and nice) or (elapsed > limit and ok) or elapsed > 1.3 * limit):
+            if _make_breather(sa, ev, p, sm, rng):
+                end_ms = _event_end_ms(sa, ev)
+                rest_until = end_ms + beat / g.snap                  # a quarter tick of air after the release
+                while i < len(pending) and pending[i].time_ms < rest_until:
+                    i += 1
+                out.append(ev)
+                start, prev_end, prev_hold = None, end_ms, True
+                continue
+        out.append(ev)
+        prev_end = _event_end_ms(sa, ev)
+        prev_hold = ev.kind == "slider" and (prev_end - t) >= 0.97 * beat
+        if prev_hold:
+            start = None
+    return out
+
+
 def _final_spinner(sa: SongAnalysis, events: List[RhythmEvent], p: MapParams):
     if not events or p.knob > 0.75:
         return
     last = events[-1]
     ticks = sa.ticks
-    last_end = ticks[last.end_tick_index].time_ms if last.kind == "slider" else last.time_ms
+    last_end = _event_end_ms(sa, last)
     beat = _beat_ms(sa, ticks[last.tick_index])
     start = last_end + beat
     end = sa.music_end_ms - beat * 0.5
@@ -324,7 +415,7 @@ def _combos_and_hitsounds(sa: SongAnalysis, events: List[RhythmEvent], P: Sectio
         count += 1
         last_bar = bar
         prev_section = s.index
-        prev_end = ticks[ev.end_tick_index].time_ms if ev.end_tick_index >= 0 else g.time_ms
+        prev_end = _event_end_ms(sa, ev) if ev.end_tick_index >= 0 else g.time_ms
         # hitsounds: finish on section/kiai starts, clap on accented backbeats, whistle on held notes
         hs = 0
         if new and (s.kiai or s.label == "chorus") and g.sub == 0 and g.beat_index % 4 == 0:
