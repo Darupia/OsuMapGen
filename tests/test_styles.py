@@ -25,3 +25,24 @@ def test_styles_are_distinct(analysed):
     assert prof["stream"]["stream_notes"] > prof["simple"]["stream_notes"]
     assert prof["jump"]["avg_dist"] > 1.5 * prof["stream"]["avg_dist"]
     assert prof["jump"]["avg_dist"] > prof["simple"]["avg_dist"]
+
+
+def _run_lengths(sa, style, knob):
+    m = generator.generate(sa, 6.0, style, knob, 1)
+    runs, cur = [], 1
+    for a, b in zip(m.objects, m.objects[1:]):
+        if b.time_ms - a.time_ms <= 0.3 * 60000 / 150:       # 1/4 notes at the fixture's tempo or faster
+            cur += 1
+        else:
+            if cur >= 4:
+                runs.append(cur)
+            cur = 1
+    return runs
+
+
+def test_stream_runs_are_long_and_varied(analysed):
+    sa, _ = analysed("full")
+    runs = _run_lengths(sa, "stream", 1.0)
+    assert runs, "stream preset produced no streams"
+    assert max(runs) > 5, "streams are stuck at burst length"
+    assert len(set(runs)) >= 3, f"stream lengths are not varied: {sorted(set(runs))}"

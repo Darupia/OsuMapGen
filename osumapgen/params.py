@@ -77,6 +77,7 @@ class MapParams:
     slider_min_gap: float = 0.99  # shortest gap (in beats) a slider may fill
     slider_force: float = 0.0     # minimum slider probability once a musical slider end exists
     slider_repeat: float = 0.18   # chance of a repeat slider on a long gap
+    stream_fill: bool = False     # bridge small holes so 1/4 runs become long streams
 
     def level(self, intensity: float) -> float:
         return self.level_lo + (self.level_hi - self.level_lo) * intensity
@@ -109,30 +110,40 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_rate = min(0.9, p.slider_rate + 0.15)
         p.quarter_bias = -0.4
     elif style == "stream":
+        # long, varied 1/4 streams with slider "kicks" between them
         p.level_hi += 0.6
-        p.quarter_bias = 0.45
-        p.spacing *= 0.7
-        p.max_burst = max(p.max_burst, int(10 + 22 * k))
-        p.stream_spacing *= 1.1
-        p.slider_rate *= 0.4
+        p.quarter_bias = 0.6
+        p.stream_fill = True
+        p.spacing *= 0.8
+        p.max_burst = max(p.max_burst, int(14 + 20 * k))
+        p.stream_spacing *= 1.5
+        p.slider_rate = 0.5
+        p.slider_force = 0.2
+        p.slider_min_gap = 0.74
         p.angle_sharpness *= 0.6
     elif style == "jump":
-        p.level_hi = min(p.level_hi, 2.6)
-        p.level_lo = min(p.level_lo, 2.0)
-        p.quarter_bias = -1.0              # no streams: difficulty comes from distance
+        # sparse rhythm, wide spacing, many sliders; difficulty comes from distance
+        p.level_hi = min(p.level_hi, 2.0)
+        p.level_lo = min(p.level_lo, 1.5)
+        p.quarter_bias = -1.0
         p.spacing *= 1.7
         p.jump_boost += 0.5
         p.max_burst = 2
         p.angle_sharpness = min(1.0, p.angle_sharpness + 0.3)
-        p.slider_rate *= 0.4
+        p.slider_rate = 0.8
+        p.slider_force = 0.45
+        p.slider_min_gap = 0.74
+        p.slider_repeat = 0.3
         p.max_distance = min(470.0, p.max_distance + 60)
     elif style == "tech":
+        # odd angles, short and repeat sliders, small bursts
         p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
-        p.slider_rate = min(0.9, p.slider_rate + 0.25)
-        p.slider_min_gap = 0.74
+        p.slider_rate = 0.6
+        p.slider_force = 0.3
+        p.slider_min_gap = 0.49
         p.slider_repeat = 0.5
         p.quarter_bias = 0.1
-        p.max_burst = min(p.max_burst, 6)
+        p.max_burst = min(p.max_burst, 4)
     elif style == "slider":
         p.slider_rate = 0.95
         p.slider_force = 0.8
@@ -186,7 +197,7 @@ def mix_styles(sa: SongAnalysis, stars: float) -> Dict[int, str]:
         # presets that suit this section, best fit first
         if I < 0.4 or s.label in ("intro", "outro", "breakdown"):
             fits = ["slider", "simple"] if f["sustain"] > 0.35 else ["simple", "slider"]
-        elif I >= 0.75 and f["fast"] > 0.6:
+        elif I >= 0.6 and f["fast"] > 0.4:
             fits = ["stream", "jump", "tech"]
         elif I >= 0.75:
             fits = ["jump", "tech", "balanced"]

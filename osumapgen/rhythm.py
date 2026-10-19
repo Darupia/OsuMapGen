@@ -71,10 +71,32 @@ def select_ticks(sa: SongAnalysis, P: SectionParams) -> List[int]:
                 take = on >= max(0.15, thr)
         if take:
             chosen.append(i)
-    return chosen
+    return _fill_streams(sa, chosen, P)
 
 
-def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams) -> List[int]:
+def _fill_streams(sa: SongAnalysis, chosen: List[int], P: SectionParams) -> List[int]:
+    """Stream presets: bridge 1-2 missing 1/4 ticks next to an existing run so the music's
+    continuous 1/4 passages become real streams instead of broken 3-5 note bursts."""
+    ticks = sa.ticks
+    have = set(chosen)
+    out = set(chosen)
+    for a, b in zip(chosen[:-1], chosen[1:]):
+        if b - a not in (2, 3):
+            continue
+        ga, gb = ticks[a], ticks[b]
+        s = sa.sections[ga.section_index]
+        p = P.of(s.index)
+        if not p.stream_fill or s.is_break or ga.timing_index != gb.timing_index or ga.snap != 4 or gb.snap != 4:
+            continue
+        if p.level(s.intensity) < 2.0:
+            continue
+        in_run = (a - 1) in have or (b + 1) in have
+        if in_run:
+            out.update(range(a + 1, b))
+    return sorted(out)
+
+
+def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for) -> List[int]:
     """Split 1/4 runs longer than the allowed burst length for their section."""
     if not idx:
         return idx
@@ -89,13 +111,19 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams) -> List[int]
         s = sa.sections[ticks[run[0]].section_index]
         p = P.of(s.index)
         L = p.level(s.intensity)
-        if L < 2.6:
+        if L < (2.0 if p.stream_fill else 2.6):
             cap = 3
-        elif L < 3.2:
+        elif L < 3.2 and not p.stream_fill:
             cap = 5
+        elif L < 3.2:
+            cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 2.6) / 0.6, 0.0, 1.0) * 0.6)) if L >= 2.6 else 6
+        elif p.stream_fill:
+            cap = p.max_burst
         else:
             cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 3.2) / 0.8, 0, 1)))
         cap = max(2, min(cap, p.max_burst))
+        base_cap, rng = cap, rng_for(10_000 + s.index)
+        cap = _vary_cap(base_cap, p.max_burst, len(run), L, rng)
         k = 0
         count = 0
         while k < len(run):
@@ -109,6 +137,7 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams) -> List[int]
                     j += 1
                 k = j + 1
                 count = 0
+                cap = _vary_cap(base_cap, p.max_burst, len(run) - k, L, rng)
                 continue
             k += 1
 
@@ -123,6 +152,24 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams) -> List[int]
     return sorted(set(out))
 
 
+_BURST_LENGTHS = (3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32)
+
+
+def _vary_cap(cap: int, max_burst: int, run_len: int, L: float, rng) -> int:
+    """Pick this run's length from a spread of lengths up to the section's limit, so streams
+    are not all the same size. Short runs and low levels are left alone."""
+    if L < 2.0 or cap < 6 or run_len <= 3:
+        return cap
+    choices = [n for n in _BURST_LENGTHS if 3 <= n <= cap]
+    if not choices:
+        return cap
+    w = np.array([1.0 + 0.35 * i for i in range(len(choices))])    # favour the longer end a little
+    pick = choices[int(rng.choice(len(choices), p=w / w.sum()))]
+    # do not leave a 1-2 note stub behind the split
+    rest = run_len - pick
+    return run_len if 0 < rest <= 2 and run_len <= cap else pick
+
+
 def _beat_ms(sa: SongAnalysis, g: GridTick) -> float:
     return sa.timing[g.timing_index].beat_ms
 
@@ -130,7 +177,7 @@ def _beat_ms(sa: SongAnalysis, g: GridTick) -> float:
 def plan_rhythm(sa: SongAnalysis, P: SectionParams, sm: float, rng_for) -> List[RhythmEvent]:
     """rng_for(section_index) -> np.random.Generator (deterministic per section)."""
     ticks = sa.ticks
-    idx = _cap_bursts(sa, select_ticks(sa, P), P)
+    idx = _cap_bursts(sa, select_ticks(sa, P), P, rng_for)
     if not idx:
         return []
     events: List[RhythmEvent] = []
