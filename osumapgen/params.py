@@ -73,6 +73,10 @@ class MapParams:
     slider_rate: float       # 0..1 preference for sliders on long gaps
     angle_sharpness: float   # 0 = flowing curves, 1 = sharp jumps
     max_distance: float      # hard cap for one jump (px)
+    quarter_bias: float = 0.0     # >0 maps more 1/4 notes (streams), <0 fewer
+    slider_min_gap: float = 0.99  # shortest gap (in beats) a slider may fill
+    slider_force: float = 0.0     # minimum slider probability once a musical slider end exists
+    slider_repeat: float = 0.18   # chance of a repeat slider on a long gap
 
     def level(self, intensity: float) -> float:
         return self.level_lo + (self.level_hi - self.level_lo) * intensity
@@ -99,29 +103,44 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
     if style == "simple":
         p.level_hi = min(p.level_hi, 0.6 + 2.6 * k)
         p.jump_boost = 1.0 + 0.1 * k
-        p.max_burst = min(p.max_burst, 5)
-        p.angle_sharpness *= 0.5
-        p.slider_rate = min(0.9, p.slider_rate + 0.1)
-    elif style == "stream":
-        p.level_hi += 0.35
-        p.spacing *= 0.85
-        p.max_burst = max(p.max_burst, int(8 + 24 * k))
-        p.stream_spacing *= 1.1
-    elif style == "jump":
-        p.level_hi = min(p.level_hi, 3.0)
-        p.level_lo = min(p.level_lo, 2.2)
-        p.spacing *= 1.2
-        p.jump_boost += 0.2
         p.max_burst = min(p.max_burst, 3)
-        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
-        p.slider_rate *= 0.7
+        p.angle_sharpness *= 0.4
+        p.spacing *= 0.8
+        p.slider_rate = min(0.9, p.slider_rate + 0.15)
+        p.quarter_bias = -0.4
+    elif style == "stream":
+        p.level_hi += 0.6
+        p.quarter_bias = 0.45
+        p.spacing *= 0.7
+        p.max_burst = max(p.max_burst, int(10 + 22 * k))
+        p.stream_spacing *= 1.1
+        p.slider_rate *= 0.4
+        p.angle_sharpness *= 0.6
+    elif style == "jump":
+        p.level_hi = min(p.level_hi, 2.6)
+        p.level_lo = min(p.level_lo, 2.0)
+        p.quarter_bias = -1.0              # no streams: difficulty comes from distance
+        p.spacing *= 1.7
+        p.jump_boost += 0.5
+        p.max_burst = 2
+        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.3)
+        p.slider_rate *= 0.4
+        p.max_distance = min(470.0, p.max_distance + 60)
     elif style == "tech":
-        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.2)
-        p.slider_rate = min(0.9, p.slider_rate + 0.1)
-        p.max_burst = min(p.max_burst, 9)
+        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
+        p.slider_rate = min(0.9, p.slider_rate + 0.25)
+        p.slider_min_gap = 0.74
+        p.slider_repeat = 0.5
+        p.quarter_bias = 0.1
+        p.max_burst = min(p.max_burst, 6)
     elif style == "slider":
-        p.slider_rate = min(0.95, p.slider_rate + 0.3)
+        p.slider_rate = 0.95
+        p.slider_force = 0.8
+        p.slider_min_gap = 0.49
+        p.slider_repeat = 0.3
         p.level_hi -= 0.2
+        p.max_burst = min(p.max_burst, 3)
+        p.quarter_bias = -0.3
     return p
 
 

@@ -17,7 +17,7 @@ as the *Creator*, which is the name osu! checks when you upload a map. It is **c
 exactly as it appears on your osu! profile ("Peppy" is not "peppy"). It's optional. Without it, maps
 are credited to "OsuMapGen". You can change it any time in the main window.
 
-**Styles:** Auto, Simple and readable, Stream-focused, Jump-focused, Technical, Slider-focused, or
+**Styles** change the structure of the map, not just its look, at the same star rating: Stream-focused adds long 1/4 runs with tight spacing; Jump-focused has no streams and wide spacing; Slider-focused uses sliders on most gaps (down to half a beat); Technical mixes sharp angles with short and repeat sliders; Simple keeps rhythm sparse and spacing small. Available styles: Auto, Simple and readable, Stream-focused, Jump-focused, Technical, Slider-focused, or
 **Balanced mix (all styles)**. The mix gives each section of the song the preset that suits it and
 rotates through all of them: streams where the music has fast runs, jumps on hard-hitting parts,
 sliders or simple patterns on calm or held parts, technical and balanced patterns on verses and builds.

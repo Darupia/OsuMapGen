@@ -64,8 +64,9 @@ def select_ticks(sa: SongAnalysis, P: SectionParams) -> List[int]:
             thr = float(np.clip(1.0 - 0.5 * (L - 1.0), 0.12, 2.0))
             take = on >= thr
         else:  # quarter / triplet
-            if L >= 2.2:
-                thr = 1.2 - 0.5 * (L - 2.0) - (0.08 if c == "trip" else 0.0)
+            qb = P.of(s.index).quarter_bias
+            if L >= 2.2 - max(0.0, qb):
+                thr = 1.2 - 0.5 * (L - 2.0) - (0.08 if c == "trip" else 0.0) - qb
                 thr += {0: 0.2, 1: 0.1, 2: 0.0, 3: -0.12}[phrase]   # build density toward phrase ends
                 take = on >= max(0.15, thr)
         if take:
@@ -94,7 +95,7 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams) -> List[int]
             cap = 5
         else:
             cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 3.2) / 0.8, 0, 1)))
-        cap = max(3, min(cap, p.max_burst if p.max_burst >= 3 else 3))
+        cap = max(2, min(cap, p.max_burst))
         k = 0
         count = 0
         while k < len(run):
@@ -176,7 +177,7 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     if gn.timing_index != g.timing_index:
         return
     gap_beats = (gn.time_ms - g.time_ms) / beat
-    if gap_beats < 0.99:
+    if gap_beats < p.slider_min_gap:
         return
     rest = 0.5 if L < 1.5 else (1.0 / g.snap)
     max_len = min(gap_beats - rest, MAX_SLIDER_PX / (sm * 100.0), 2.0 if L < 1.5 else 1.5)
@@ -191,7 +192,7 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     # musically motivated end: an un-mapped onset, or the end of a held sound
     best_len, best_score = None, -1.0
     for d in lengths:
-        if d < 0.49 and L < 2.5:
+        if d < 0.49 and L < 2.5 and p.slider_min_gap >= 0.9:
             continue
         j = ev.tick_index + int(round(d * g.snap))
         if j >= len(ticks) or ticks[j].timing_index != g.timing_index:
@@ -209,10 +210,11 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     chance = p.slider_rate * (0.35 + 0.65 * min(1.0, best_score))
     if L < 1.2 and gap_beats >= 2:
         chance = max(chance, 0.55)       # easy maps use sliders to fill long gaps
+    chance = max(chance, p.slider_force)
     if rng.random() >= chance:
         return
     repeats = 1
-    if best_len >= 1.0 and L < 2.8 and rng.random() < 0.18:
+    if best_len >= 1.0 and L < 2.8 and rng.random() < p.slider_repeat:
         half = ticks[min(len(ticks) - 1, ev.tick_index + int(round(best_len / 2 * g.snap)))]
         if half.onset > 0.3:
             best_len /= 2
