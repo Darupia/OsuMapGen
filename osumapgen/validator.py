@@ -98,6 +98,15 @@ def split_sections(text: str):
     return sections
 
 
+def background_of(text: str) -> Optional[str]:
+    """File name of the map's background image event (0,0,"name",x,y), if any."""
+    for line in split_sections(text).get("Events", []):
+        m = re.match(r'^(?:0|Background)\s*,\s*0\s*,\s*"?([^",]+?)"?\s*(?:,|$)', line)
+        if m:
+            return m.group(1)
+    return None
+
+
 def kv(lines: List[str]) -> Dict[str, str]:
     out = {}
     for l in lines:
@@ -228,6 +237,12 @@ def validate_text(text: str, sa: Optional[SongAnalysis] = None, audio_dir: Optio
             rep.error("difficulty.missing", f"Difficulty field {k} missing or invalid")
     if audio_dir is not None and audio_name and not (Path(audio_dir) / audio_name).is_file():
         rep.error("audio.missing", f"Audio file '{audio_name}' not found next to the map")
+    bg = background_of(text)
+    if bg is not None:
+        if Path(bg).name != bg or not bg.lower().endswith((".jpg", ".jpeg", ".png")):
+            rep.error("background.name", f"Background '{bg}' must be a .jpg/.png file next to the map")
+        elif audio_dir is not None and not (Path(audio_dir) / bg).is_file():
+            rep.error("background.missing", f"Background image '{bg}' not found next to the map")
 
     pts = parse_timing(secs["TimingPoints"], rep)
     red = [p for p in pts if p[4] == 1]
@@ -432,18 +447,47 @@ def _quality(rep: ValidationReport, objs: List[ParsedObject], sa: SongAnalysis, 
     rep.metrics["section_density"] = {str(k): round(d, 2) for k, (_, d) in dens.items()}
 
 
-def validate_osz(osz_path: Path, osu_name: str, osu_bytes: bytes, audio_name: str) -> ValidationReport:
+def validate_osz(osz_path: Path, osu_name, osu_bytes: Optional[bytes], audio_name: str) -> ValidationReport:
+    """Check the package. osu_name is one file name (with osu_bytes), or a {name: bytes} dict of every
+    difficulty expected in a mapset (osu_bytes is then ignored). Every .osu inside is checked."""
     rep = ValidationReport()
+    expected = dict(osu_name) if isinstance(osu_name, dict) else {osu_name: osu_bytes}
     try:
         with zipfile.ZipFile(osz_path) as z:
             bad = z.testzip()
             if bad:
                 rep.error("osz.corrupt", f"Corrupt entry in package: {bad}")
             names = z.namelist()
-            if osu_name not in names:
-                rep.error("osz.osu_missing", f"{osu_name} missing from package")
-            elif z.read(osu_name) != osu_bytes:
-                rep.error("osz.osu_mismatch", "Packaged .osu differs from the exported file")
+            for name, data in expected.items():
+                if name not in names:
+                    rep.error("osz.osu_missing", f"{name} missing from package")
+                elif z.read(name) != data:
+                    rep.error("osz.osu_mismatch", f"Packaged {name} differs from the exported file")
+            versions: Dict[str, str] = {}
+            for name in names:
+                if not name.lower().endswith(".osu"):
+                    continue
+                if name not in expected:
+                    rep.error("osz.osu_unexpected", f"Unexpected .osu in package: {name}")
+                text = z.read(name).decode("utf-8", errors="replace")
+                if not text.lstrip("﻿").startswith("osu file format v14"):
+                    rep.error("osz.osu_header", f"{name} has no 'osu file format v14' header")
+                    continue
+                meta = kv(split_sections(text).get("Metadata", []))
+                ver = meta.get("Version", "")
+                if ver in versions:
+                    rep.error("osz.version_duplicate",
+                              f"{name} and {versions[ver]} share the difficulty name '{ver}'")
+                versions[ver] = name
+                gen = kv(split_sections(text).get("General", []))
+                if gen.get("AudioFilename", "") != audio_name:
+                    rep.error("osz.audio_ref", f"{name} does not reference the packaged audio '{audio_name}'")
+                bg = background_of(text)
+                if bg is not None and bg not in names:
+                    rep.error("osz.background_missing", f"{name} references background '{bg}', "
+                                                        "which is not in the package")
+            if not versions:
+                rep.error("osz.no_osu", "Package contains no .osu file")
             if audio_name not in names:
                 rep.error("osz.audio_missing", f"Audio '{audio_name}' missing from package")
             elif z.getinfo(audio_name).file_size < 1024:

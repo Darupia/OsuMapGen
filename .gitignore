@@ -19,3 +19,11 @@ _scratch/
 .idea/
 Thumbs.db
 desktop.ini
+
+# Generated maps and test packs
+output/
+references/
+
+# PyInstaller
+build/
+dist/

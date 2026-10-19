@@ -52,6 +52,8 @@ class Settings:
     open_in_osu_after: bool = False
     username: str = ""            # osu! username written as the map's Creator (case-sensitive)
     username_asked: bool = False  # the first-run prompt has been shown
+    mapset: bool = False          # make a full mapset (Easy up to the target) instead of one difficulty
+    length: str = "Full song"     # "Full song" or a length such as "1:30"; the best part of the song is cut
 
     @classmethod
     def path(cls) -> Path:

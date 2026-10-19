@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, analysis, generator, packaging, serializer, star_rating, validator
+import shutil
+import tempfile
+
+from . import (__version__, analysis, audio_io, detail, generator, length, packaging, preview, serializer,
+               star_rating, validator)
 from .infra import Cancelled, Progress, UserFacingError, check_username, get_logger
 from .model import GeneratedMap, SongAnalysis
 from .params import KNOB_MAX, STYLE_KEYS, initial_knob, resolve_style
@@ -34,6 +38,28 @@ class GenerationRequest:
     tolerance: float = 0.5
     offset_ms: float = 0.0
     creator: Optional[str] = None     # the player's osu! username, exactly as on their profile
+    mapset: bool = False              # several difficulties (Easy up to `stars`) in one .osz
+    length: Optional[str] = None      # "Full song" / None, or a length such as "1:30"; the best part is cut out
+    # set by run() when the song is cut (not by callers)
+    source_path: Optional[str] = None
+    cut_note: str = ""
+    map_seconds: Optional[float] = None
+
+
+@dataclass
+class DifficultyResult:
+    """One difficulty of a full mapset."""
+    version: str
+    requested_stars: float
+    estimated_stars: float
+    estimated_stars_stable: float
+    within_tolerance: bool
+    ok: bool                           # validated and packaged
+    style_used: str = ""
+    objects: int = 0
+    coverage_pct: Optional[float] = None
+    osu_path: Optional[str] = None
+    errors: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -55,6 +81,13 @@ class GenerationResult:
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     timeline: List[Tuple[float, int]] = field(default_factory=list)   # (time_s, objects per bar) for preview
+    preview_path: Optional[str] = None      # song + click track, for checking timing by ear (not in the .osz)
+    background_path: Optional[str] = None   # cover art from the MP3, used as the map background
+    mapset: bool = False
+    length_note: str = ""                   # which part of the song was mapped, when it was cut
+    detail_level: int = 1                   # versions generated per section (more for shorter maps)
+    difficulties: List[DifficultyResult] = field(default_factory=list)  # mapset only, easiest first
+    skipped: List[str] = field(default_factory=list)                    # mapset difficulties not exported
 
 
 # ---------------------------------------------------------------- metadata
@@ -100,13 +133,14 @@ def _lead_in(m: GeneratedMap) -> int:
     return int(max(0, round(need / 100.0) * 100))
 
 
-def search_knob(sa, target, style_key, seed, meta, audio_name, progress: Progress, tol: float):
+def search_knob(sa, target, style_key, seed, meta, audio_name, progress: Progress, tol: float,
+                stage: str = "generate"):
     history: List[Candidate] = []
     lo, hi = 0.0, KNOB_MAX
     knob = initial_knob(target)
     best: Optional[Candidate] = None
     for it in range(MAX_SEARCH_ITERS):
-        progress.update("generate", it / MAX_SEARCH_ITERS,
+        progress.update(stage, it / MAX_SEARCH_ITERS,
                         f"Generating and rating map (attempt {it + 1}/{MAX_SEARCH_ITERS})")
         c = _evaluate(sa, target, style_key, knob, seed, {}, meta, audio_name)
         history.append(c)
@@ -129,48 +163,88 @@ def search_knob(sa, target, style_key, seed, meta, audio_name, progress: Progres
             knob = lo + (hi - lo) * min(0.85, max(0.15, f))
         else:
             knob = (lo + hi) / 2
-    progress.update("generate", 1.0, f"Estimated {best.stars:.2f} stars")
+    progress.update(stage, 1.0, f"Estimated {best.stars:.2f} stars")
     return best, history
+
+
+
+
+# ---------------------------------------------------------------- mapset spread
+
+MAPSET_SPREAD = [2.0, 3.2, 4.4, 5.6]
+MAPSET_MIN_GAP = 0.5        # a spread entry this close below the target is dropped (the target replaces it)
+# osu!'s difficulty-name convention, by star rating
+VERSION_NAMES = [(2.0, "Easy"), (2.7, "Normal"), (4.0, "Hard"), (5.3, "Insane"), (6.5, "Expert")]
+
+
+def mapset_targets(stars: float) -> List[float]:
+    """Easiest first; the requested stars are always the hardest difficulty."""
+    return [t for t in MAPSET_SPREAD if t <= stars - MAPSET_MIN_GAP] + [round(float(stars), 2)]
+
+
+def version_name(stars: float) -> str:
+    for limit, name in VERSION_NAMES:
+        if stars < limit:
+            return name
+    return "Expert+"
+
+
+def unique_versions(stars: List[float]) -> List[str]:
+    """Names by estimated stars; difficulties that land in the same band get their stars appended."""
+    names = [version_name(x) for x in stars]
+    out: List[str] = []
+    for name, x in zip(names, stars):
+        v = f"{name} {x:.1f}" if names.count(name) > 1 else name
+        while v in out:
+            v += "+"
+        out.append(v)
+    return out
 
 
 # ---------------------------------------------------------------- main entry
 
-def run(req: GenerationRequest, progress: Optional[Progress] = None) -> GenerationResult:
-    progress = progress or Progress()
-    progress.plan([("decode", 8), ("features", 14), ("timing", 10), ("structure", 6),
-                   ("generate", 45), ("validate", 7), ("package", 10)])
-    t0 = time.time()
+def _prepare(req: GenerationRequest, res: GenerationResult, progress: Progress):
     target = float(req.stars)
-    res = GenerationResult(ok=False, message="", requested_stars=target)
     if not (0.5 <= target <= 12.0):
         raise UserFacingError("Please enter a star rating between 0.5 and 12.")
     creator = req.creator or ""
     if creator and check_username(creator):
         raise UserFacingError(f"osu! username '{creator}': {check_username(creator)}")
-
     sa = analysis.analyse(req.mp3_path, progress, offset_ms=req.offset_ms)
     res.warnings.extend(sa.warnings)
     title, artist = resolve_metadata(sa, req)
-    style_key = resolve_style(req.style, sa, target)
-    res.style_used = STYLE_NAMES.get(style_key, style_key)
-    version = f"Generated {target:.1f} Stars - {res.style_used}"
-    meta =serializer.Metadata(title=title, artist=artist, version=version, creator=creator or "OsuMapGen",
-                               tags=f"osumapgen generated {res.style_used.lower()}")
     if not creator:
         res.warnings.append("No osu! username set: the map's creator is 'OsuMapGen'. Set your username "
                             "(case-sensitive) if you want to upload it.")
     audio_name = packaging.audio_filename(req.mp3_path)
     seed = int(sa.content_hash[:8], 16)
+    return sa, title, artist, creator or "OsuMapGen", audio_name, seed
 
+
+def _build(sa, target, style_key, seed, meta, audio_name, progress, tol, gen_stage="generate",
+           val_stage="validate", versions: int = 1):
+    """Star search, detail passes (several versions per section, best kept), then validation
+    with bounded, section-targeted regeneration."""
     progress.check()
-    best, history = search_knob(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance)
-
-    # ---- validation with bounded, section-targeted regeneration
+    best, history = search_knob(sa, target, style_key, seed, meta, audio_name, progress, tol, gen_stage)
     attempts: Dict[int, int] = {}
     cand = best
+    if versions > 1:
+        progress.update(gen_stage, 0.95, f"Adding detail: comparing {versions} versions of every section")
+        chosen = detail.refine_sections(
+            sa, target, style_key, best.knob, seed, versions,
+            on_step=lambda f: progress.update(gen_stage, 0.95 + 0.05 * f,
+                                              f"Adding detail: comparing {versions} versions of every section"))
+        if chosen:
+            refined = _evaluate(sa, target, style_key, best.knob, seed, chosen, meta, audio_name)
+            # keep the detailed version unless it drifted away from the star target
+            if abs(refined.stars - target) <= max(tol / 2, abs(best.stars - target) + 0.05):
+                cand, attempts = refined, dict(chosen)
+            else:
+                log.info("Detail pass moved stars to %.2f; kept the undetailed map", refined.stars)
     rep = None
     for attempt in range(MAX_REPAIR_ATTEMPTS + 1):
-        progress.update("validate", attempt / (MAX_REPAIR_ATTEMPTS + 1), "Validating map")
+        progress.update(val_stage, attempt / (MAX_REPAIR_ATTEMPTS + 1), "Validating map")
         rep = validator.validate_text(cand.text, sa, audio_duration_ms=sa.audio.duration_ms)
         if rep.ok:
             break
@@ -181,7 +255,147 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
         for s in bad:
             attempts[s] = attempts.get(s, 0) + 1
         cand = _evaluate(sa, target, style_key, cand.knob, seed, attempts, meta, audio_name)
-    progress.update("validate", 1.0, "Validation finished")
+    progress.update(val_stage, 1.0, "Validation finished")
+    return cand, history, rep
+
+
+def _style_breakdown(sa: SongAnalysis, cand: Candidate) -> str:
+    styles = cand.gmap.stats.get("section_styles") or {}
+    if not styles:
+        return ""
+    parts = []
+    for s in sa.sections:
+        if s.index in styles:
+            t = max(0.0, s.start_ms) / 1000
+            parts.append(f"{int(t // 60)}:{int(t % 60):02d} {STYLE_NAMES.get(styles[s.index])}")
+    return "Styles by section: " + ", ".join(parts)
+
+
+def _osu_name(folder: Path, meta, title: str, fallback: str = "map.osu") -> str:
+    osu_name = serializer.osu_filename(meta)
+    if len(str((folder / osu_name).resolve())) > 240:      # stay below Windows' MAX_PATH
+        osu_name = serializer.safe_filename(f"{packaging.ascii_fallback(title)[:40]} [{meta.version}]") + ".osu"
+        if len(str((folder / osu_name).resolve())) > 240:
+            osu_name = fallback
+    return osu_name
+
+
+def _osz_name(folder: Path, artist: str, title: str, label: str) -> str:
+    osz_name = serializer.safe_filename(f"{packaging.ascii_fallback(artist) or 'Unknown Artist'} - "
+                                        f"{packaging.ascii_fallback(title) or 'Unknown Title'} "
+                                        f"({label})", 150) + ".osz"
+    if len(str((folder / osz_name).resolve())) > 240:
+        osz_name = "map.osz"
+    return osz_name
+
+
+def _cover(req: GenerationRequest):
+    """(art, background file name) from the MP3's embedded cover; (None, "") when it has none."""
+    art = audio_io.cover_art(req.source_path or req.mp3_path)      # a cut MP3 has no cover; use the original
+    return art, (packaging.background_filename(art[1]) if art else "")
+
+
+def _write_background(art, folder: Path, res: GenerationResult) -> List[str]:
+    if not art:
+        return []
+    name = packaging.write_background(art, folder)
+    res.background_path = str(folder / name)
+    return [name]
+
+
+def _write_preview(sa: SongAnalysis, objects, folder: Path, res: GenerationResult, progress: Progress) -> None:
+    progress.update("package", 0.7, "Writing timing preview (song + clicks)")
+    try:
+        res.preview_path = str(preview.write_preview(sa.audio, objects, folder))
+    except Exception as e:  # the map itself is fine; the preview is a convenience
+        log.warning("Timing preview failed: %s", e, exc_info=True)
+        res.warnings.append(f"The timing preview could not be written ({type(e).__name__}: {e}).")
+
+
+def _output_base(req: GenerationRequest) -> Path:
+    return Path(req.output_dir) if req.output_dir else Path.home() / "Documents" / "OsuMapGen Output"
+
+
+CUT_WEIGHT = 12          # progress-bar share of choosing and cutting the part of the song
+
+
+def _plan_single(progress: Progress, cut: bool) -> None:
+    progress.plan([("cut", CUT_WEIGHT if cut else 0), ("decode", 8), ("features", 14), ("timing", 10),
+                   ("structure", 6), ("generate", 45), ("validate", 7), ("package", 10)])
+
+
+def _plan_mapset(progress: Progress, cut: bool, n: int) -> None:
+    stages = [("cut", CUT_WEIGHT if cut else 0), ("decode", 8), ("features", 14), ("timing", 10), ("structure", 6)]
+    for i in range(n):
+        stages += [(f"generate{i}", 45 / n), (f"validate{i}", 7 / n)]
+    progress.plan(stages + [("package", 10)])
+
+
+def _apply_length(req: GenerationRequest, seconds: float, progress: Progress, workdir: Path) -> GenerationRequest:
+    """Analyse the whole song, pick the best part of about `seconds`, cut it to a new MP3 in workdir."""
+    sub = Progress(callback=lambda v, m: progress.update("cut", 0.85 * v, f"Choosing the part to map: {m}"))
+    sub.plan([("decode", 8), ("features", 14), ("timing", 10), ("structure", 6)])
+    full = analysis.analyse(req.mp3_path, sub, offset_ms=req.offset_ms)
+    plan = length.choose_window(full, seconds)
+    total = length.fmt_time(full.audio.duration_ms)
+    if plan is None:
+        return replace(req, map_seconds=(full.music_end_ms - full.music_start_ms) / 1000.0,
+                       cut_note=f"Full song mapped: it is already about {length.fmt_time(seconds * 1000)} "
+                                f"long ({total}).")
+    progress.update("cut", 0.9, f"Cutting {length.fmt_time(plan.start_ms)}-{length.fmt_time(plan.end_ms)}")
+    cut_path = length.cut_audio(req.mp3_path, plan, workdir / Path(req.mp3_path).name)
+    title, artist = req.title, req.artist
+    if not (title and artist):      # keep the original's tags in case the cut lost them
+        title = title or full.audio.title
+        artist = artist or full.audio.artist
+    note = (f"Mapped {length.fmt_time(plan.start_ms)}-{length.fmt_time(plan.end_ms)} of the {total} song "
+            f"({length.fmt_time(plan.end_ms - plan.start_ms)} requested about "
+            f"{length.fmt_time(seconds * 1000)}; cut on {plan.reason}, with a short fade-out). "
+            "The original file is unchanged.")
+    progress.update("cut", 1.0, "Cut ready")
+    return replace(req, mp3_path=str(cut_path), source_path=req.mp3_path, title=title, artist=artist,
+                   cut_note=note, map_seconds=plan.length_s)
+
+
+def run(req: GenerationRequest, progress: Optional[Progress] = None) -> GenerationResult:
+    progress = progress or Progress()
+    seconds = length.parse_length(req.length) if req.length else None
+    top = float(req.stars)
+    n = len(mapset_targets(top)) if (req.mapset and 0.5 <= top <= 12.0) else 1
+    workdir = Path(tempfile.mkdtemp(prefix="osumapgen_cut_")) if seconds else None
+    try:
+        if req.mapset:
+            _plan_mapset(progress, bool(seconds), n)
+        else:
+            _plan_single(progress, bool(seconds))
+        if seconds:
+            req = _apply_length(req, seconds, progress, workdir)
+        return run_mapset(req, progress, planned=True) if req.mapset else _run_single(req, progress)
+    finally:
+        if workdir is not None:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _versions(req: GenerationRequest, sa: SongAnalysis) -> int:
+    secs = req.map_seconds or (sa.music_end_ms - sa.music_start_ms) / 1000.0
+    return length.detail_level(secs)
+
+
+def _run_single(req: GenerationRequest, progress: Progress) -> GenerationResult:
+    t0 = time.time()
+    target = float(req.stars)
+    res = GenerationResult(ok=False, message="", requested_stars=target, length_note=req.cut_note)
+    sa, title, artist, creator, audio_name, seed = _prepare(req, res, progress)
+    res.detail_level = _versions(req, sa)
+    style_key = resolve_style(req.style, sa, target)
+    res.style_used = STYLE_NAMES.get(style_key, style_key)
+    version = f"Generated {target:.1f} Stars - {res.style_used}"
+    art, bg_name = _cover(req)
+    meta = serializer.Metadata(title=title, artist=artist, version=version, creator=creator,
+                               tags=f"osumapgen generated {res.style_used.lower()}", background=bg_name)
+
+    cand, history, rep = _build(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance,
+                                versions=res.detail_level)
 
     res.estimated_stars = round(cand.stars, 2)
     res.estimated_stars_stable = round(cand.stars_stable, 2)
@@ -191,27 +405,15 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
         res.warnings.append(_star_explanation(target, cand, history))
     res.warnings.extend(str(i) for i in rep.warnings)
     res.timeline = _timeline(sa, cand.gmap)
-    styles = cand.gmap.stats.get("section_styles") or {}
-    if styles:
-        parts = []
-        for s in sa.sections:
-            if s.index in styles:
-                t = max(0.0, s.start_ms) / 1000
-                parts.append(f"{int(t // 60)}:{int(t % 60):02d} {STYLE_NAMES.get(styles[s.index])}")
-        res.style_breakdown = "Styles by section: " + ", ".join(parts)
+    res.style_breakdown = _style_breakdown(sa, cand)
 
     # ---- export
     progress.update("package", 0.0, "Writing files")
-    base = Path(req.output_dir) if req.output_dir else Path.home() / "Documents" / "OsuMapGen Output"
-    folder = packaging.make_output_folder(base, artist, title, target, res.style_used)
+    folder = packaging.make_output_folder(_output_base(req), artist, title, target, res.style_used)
     res.output_folder = str(folder)
-    osu_name = serializer.osu_filename(meta)
-    if len(str((folder / osu_name).resolve())) > 240:      # stay below Windows' MAX_PATH
-        osu_name = serializer.safe_filename(f"{packaging.ascii_fallback(title)[:40]} [{version}]") + ".osu"
-        if len(str((folder / osu_name).resolve())) > 240:
-            osu_name = "map.osu"
+    osu_name = _osu_name(folder, meta, title)
     osu_bytes = cand.text.encode("utf-8")
-    report_payload = _report_payload(req, res, sa, cand, history, rep, meta, style_key, time.time() - t0)
+    report_payload = _report_payload(req, target, sa, cand, history, rep, meta, style_key, time.time() - t0)
     if not rep.ok:
         # never present an invalid map as complete: keep the draft for diagnosis only
         (folder / ("INVALID DRAFT - " + osu_name)).write_bytes(osu_bytes)
@@ -222,14 +424,11 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
         return res
 
     packaging.copy_audio(req.mp3_path, folder)
+    extra = _write_background(art, folder, res)
     (folder / osu_name).write_bytes(osu_bytes)
     progress.update("package", 0.4, "Packaging .osz")
-    osz_name = serializer.safe_filename(f"{packaging.ascii_fallback(artist) or 'Unknown Artist'} - "
-                                        f"{packaging.ascii_fallback(title) or 'Unknown Title'} "
-                                        f"({target:.1f} stars)", 150) + ".osz"
-    if len(str((folder / osz_name).resolve())) > 240:
-        osz_name = "map.osz"
-    osz = packaging.build_osz(folder, osu_name, audio_name, osz_name)
+    osz = packaging.build_osz(folder, osu_name, audio_name,
+                              _osz_name(folder, artist, title, f"{target:.1f} stars"), extra_files=extra)
     vrep = validator.validate_text((folder / osu_name).read_bytes().decode("utf-8"), sa, audio_dir=folder,
                                    audio_duration_ms=sa.audio.duration_ms)
     orep = validator.validate_osz(osz, osu_name, osu_bytes, audio_name)
@@ -241,6 +440,7 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
         return res
     res.osu_path = str(folder / osu_name)
     res.osz_path = str(osz)
+    _write_preview(sa, cand.gmap.objects, folder, res, progress)
     res.duration_s = round(time.time() - t0, 1)
     report_payload["elapsed_s"] = res.duration_s
     res.ok = True
@@ -249,6 +449,128 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
     res.report_path = str(_write_report(folder, report_payload, res))
     progress.update("package", 1.0, "Finished")
     return res
+
+
+def run_mapset(req: GenerationRequest, progress: Optional[Progress] = None, planned: bool = False
+               ) -> GenerationResult:
+    """Several difficulties from ONE audio analysis, packaged together in one .osz."""
+    progress = progress or Progress()
+    t0 = time.time()
+    top = float(req.stars)
+    targets = mapset_targets(top) if 0.5 <= top <= 12.0 else [top]
+    n = len(targets)
+    if not planned:
+        _plan_mapset(progress, False, n)
+    res = GenerationResult(ok=False, message="", requested_stars=top, mapset=True, length_note=req.cut_note)
+    sa, title, artist, creator, audio_name, seed = _prepare(req, res, progress)
+    res.detail_level = _versions(req, sa)
+
+    # ---- every difficulty comes from the same analysis
+    built = []
+    art, bg_name = _cover(req)
+    for i, target in enumerate(targets):
+        style_key = resolve_style(req.style, sa, target)
+        style_name = STYLE_NAMES.get(style_key, style_key)
+        meta = serializer.Metadata(title=title, artist=artist, version=f"Generated {target:.1f} Stars",
+                                   creator=creator, tags=f"osumapgen generated mapset {style_name.lower()}",
+                                   background=bg_name)
+        cand, history, rep = _build(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance,
+                                    f"generate{i}", f"validate{i}", versions=res.detail_level)
+        built.append((target, style_key, meta, cand, history, rep))
+
+    # ---- name difficulties by their estimated stars, then re-serialize with the final Version
+    # (Version does not affect the star rating or any validation check)
+    versions = unique_versions([b[3].stars for b in built])
+    entries = []
+    for (target, style_key, meta, cand, history, rep), version in zip(built, versions):
+        meta = replace(meta, version=version)
+        cand = replace(cand, text=serializer.serialize(sa, cand.gmap, meta, audio_name, _lead_in(cand.gmap)))
+        d = DifficultyResult(version=version, requested_stars=target, estimated_stars=round(cand.stars, 2),
+                             estimated_stars_stable=round(cand.stars_stable, 2),
+                             within_tolerance=abs(cand.stars - target) <= req.tolerance, ok=rep.ok,
+                             style_used=STYLE_NAMES.get(style_key, style_key), objects=len(cand.gmap.objects),
+                             coverage_pct=rep.metrics.get("coverage_pct"),
+                             errors=[str(i) for i in rep.errors])
+        if not d.within_tolerance:
+            res.warnings.append(f"[{version}] " + _star_explanation(target, cand, history))
+        res.warnings.extend(f"[{version}] {i}" for i in rep.warnings)
+        entries.append((d, target, style_key, meta, cand, history, rep))
+    res.difficulties = [e[0] for e in entries]
+
+    # ---- export: write every difficulty, re-check each written file, package the ones that pass
+    progress.update("package", 0.0, "Writing files")
+    folder = packaging.make_output_folder(_output_base(req), artist, title, top, "Full mapset")
+    res.output_folder = str(folder)
+    extra: List[str] = []
+    if any(e[0].ok for e in entries):
+        packaging.copy_audio(req.mp3_path, folder)
+        extra = _write_background(art, folder, res)
+    exported: Dict[str, bytes] = {}
+    names: Dict[str, str] = {}
+    for k, (d, *_rest) in enumerate(entries):
+        meta, cand = _rest[2], _rest[3]
+        osu_name = _osu_name(folder, meta, title, f"map {k + 1}.osu")
+        names[d.version] = osu_name
+        data = cand.text.encode("utf-8")
+        if d.ok:
+            (folder / osu_name).write_bytes(data)
+            vrep = validator.validate_text((folder / osu_name).read_bytes().decode("utf-8"), sa,
+                                           audio_dir=folder, audio_duration_ms=sa.audio.duration_ms)
+            if vrep.ok:
+                d.osu_path = str(folder / osu_name)
+                exported[osu_name] = data
+                continue
+            d.ok = False
+            d.errors = [str(i) for i in vrep.errors]
+            (folder / osu_name).unlink()
+        # never present an invalid map as complete: keep the draft for diagnosis only
+        (folder / ("INVALID DRAFT - " + osu_name)).write_bytes(data)
+        res.skipped.append(d.version)
+        res.errors.append(f"[{d.version}] SKIPPED (failed validation)"
+                          + (f": {d.errors[0]}" if d.errors else ""))
+    payloads = [dict(_report_payload(req, target, sa, cand, history, rep, meta, style_key, 0.0),
+                     exported=d.ok, osu_file=names[d.version] if d.ok else None)
+                for d, target, style_key, meta, cand, history, rep in entries]
+
+    def finish(ok: bool, message: str) -> GenerationResult:
+        res.ok = ok
+        res.message = message
+        res.duration_s = round(time.time() - t0, 1)
+        res.report_path = str(_write_mapset_report(folder, req, sa, payloads, res))
+        return res
+
+    if not exported:
+        return finish(False, f"All {n} difficulties failed validation after {MAX_REPAIR_ATTEMPTS} repair "
+                             "attempts; no .osz was created. See the report.")
+
+    progress.update("package", 0.4, "Packaging .osz")
+    osz = packaging.build_osz(folder, list(exported), audio_name, _osz_name(folder, artist, title, "full mapset"),
+                              extra_files=extra)
+    orep = validator.validate_osz(osz, exported, None, audio_name)
+    if not orep.ok:
+        res.errors.extend(str(i) for i in orep.errors)
+        osz.unlink(missing_ok=True)
+        return finish(False, "Exported files failed their final check; see the report.")
+
+    ok_entries = [e for e in entries if e[0].ok]
+    hardest, cand = ok_entries[-1][0], ok_entries[-1][4]
+    res.osz_path = str(osz)
+    res.osu_path = hardest.osu_path
+    res.estimated_stars = hardest.estimated_stars
+    res.estimated_stars_stable = hardest.estimated_stars_stable
+    res.within_tolerance = all(e[0].within_tolerance for e in ok_entries)
+    res.coverage_pct = hardest.coverage_pct
+    res.style_used = hardest.style_used
+    res.timeline = _timeline(sa, cand.gmap)
+    res.style_breakdown = _style_breakdown(sa, cand)
+    _write_preview(sa, cand.gmap.objects, folder, res, progress)        # clicks of the hardest difficulty
+    listing =", ".join(f"{e[0].version} {e[0].estimated_stars:.2f}" for e in ok_entries)
+    msg = f"Done: full mapset with {len(ok_entries)} difficulties ({listing} stars) in one .osz."
+    if res.skipped:
+        msg += f" SKIPPED (failed validation, not in the .osz): {', '.join(res.skipped)}."
+    out = finish(True, msg)
+    progress.update("package", 1.0, "Finished")
+    return out
 
 
 def _star_explanation(target: float, cand: Candidate, history: List[Candidate]) -> str:
@@ -273,22 +595,22 @@ def _timeline(sa: SongAnalysis, m: GeneratedMap) -> List[Tuple[float, int]]:
     return [(k * 2.0, bins.get(k, 0)) for k in range(n)]
 
 
-def _report_payload(req, res, sa, cand: Candidate, history, rep, meta, style_key, elapsed) -> dict:
+def _report_payload(req, target, sa, cand: Candidate, history, rep, meta, style_key, elapsed) -> dict:
     client = packaging.osu_client_name()
     return {
         "generator": f"OsuMapGen {__version__}",
-        "input": str(req.mp3_path),
+        "input": str(req.source_path or req.mp3_path),
         "metadata": {"title": meta.title, "artist": meta.artist, "version": meta.version, "creator": meta.creator,
                      "title_source": "user" if req.title else ("id3" if sa.audio.title else "filename"),
                      "artist_source": "user" if req.artist else ("id3" if sa.audio.artist else
                                                                  "filename/unknown")},
         "stars": {
-            "requested": req.stars,
+            "requested": target,
             "estimated_lazer": round(cand.stars, 3),
             "estimated_stable": round(cand.stars_stable, 3),
             "calculator": star_rating.calculator_version(),
             "tolerance": req.tolerance,
-            "within_tolerance": abs(cand.stars - req.stars) <= req.tolerance,
+            "within_tolerance": abs(cand.stars - target) <= req.tolerance,
             "installed_client": client or "not found",
             "client_rating": "Not read automatically: open the map in osu! to see the client's own rating.",
             "search": [{"knob": round(h.knob, 4), "stars": round(h.stars, 3), "objects": len(h.gmap.objects)}
@@ -309,14 +631,10 @@ def _report_payload(req, res, sa, cand: Candidate, history, rep, meta, style_key
     }
 
 
-def _write_report(folder: Path, payload: dict, res: GenerationResult) -> Path:
-    payload["result"] = {"ok": res.ok, "message": res.message, "warnings": res.warnings, "errors": res.errors}
-    (folder / "report.json").write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    s = payload["stars"]
-    a = payload["audio"]
-    an = payload["analysis"]
-    v = payload["validation"]
-    lines = [
+# ---------------------------------------------------------------- reports
+
+def _head_lines(payload: dict, res: GenerationResult) -> List[str]:
+    return [
         f"OsuMapGen generation report ({payload['generator']})",
         "=" * 60,
         f"Status:              {'COMPLETE' if res.ok else 'FAILED'} - {res.message}",
@@ -324,7 +642,32 @@ def _write_report(folder: Path, payload: dict, res: GenerationResult) -> Path:
         f"Title / Artist:      {payload['metadata']['title']} / {payload['metadata']['artist']}"
         f"  (from {payload['metadata']['title_source']} / {payload['metadata']['artist_source']})",
         f"Creator:             {payload['metadata']['creator']}",
-        "",
+    ]
+
+
+def _extras(res: GenerationResult) -> dict:
+    return {"timing_preview": Path(res.preview_path).name if res.preview_path else None,
+            "background": Path(res.background_path).name if res.background_path else None,
+            "length": res.length_note or "Full song",
+            "detail_versions_per_section": res.detail_level}
+
+
+def _extra_lines(res: GenerationResult) -> List[str]:
+    x = _extras(res)
+    return [
+        "Length:              " + x["length"],
+        "Detail:              " + (f"{x['detail_versions_per_section']} versions of every section compared, "
+                                   "the cleanest kept (shorter maps get more)"
+                                   if x["detail_versions_per_section"] > 1 else "1 version per section (long map)"),
+        "Timing preview:      " + (f"{x['timing_preview']} (song + a click on every note; not in the .osz)"
+                                   if x["timing_preview"] else "not written"),
+        "Background:          " + (f"{x['background']} (cover art from the MP3)" if x["background"]
+                                   else "none (the MP3 has no embedded cover art)"),
+    ]
+
+
+def _star_lines(s: dict) -> List[str]:
+    return [
         "Star rating",
         f"  Requested:                 {s['requested']:.2f}",
         f"  Estimated (lazer algo):    {s['estimated_lazer']:.2f}   [{s['calculator']}]",
@@ -332,39 +675,111 @@ def _write_report(folder: Path, payload: dict, res: GenerationResult) -> Path:
         f"  Within +/-{s['tolerance']}:          {'yes' if s['within_tolerance'] else 'NO'}",
         f"  Installed osu! client:     {s['installed_client']}",
         f"  Client's own rating:       {s['client_rating']}",
-        "",
+    ]
+
+
+def _audio_lines(a: dict, an: dict) -> List[str]:
+    return [
         "Audio",
         f"  Duration:     {a['duration_s']:.1f}s   analysed: {a['analysed_s']:.1f}s ({a['analysed_pct']:.0f}%)",
         f"  Music span:   {an['music_start_ms'] / 1000:.1f}s - {an['music_end_ms'] / 1000:.1f}s",
         f"  Decoder:      {a['decoder']}, {a['sample_rate']} Hz, {a['channels']} ch, {a['bitrate_kbps']} kbps",
         f"  Timing:       " + "; ".join(f"{t['bpm']} BPM @ {t['offset_ms']}ms (conf {t['confidence']})"
                                          for t in an["timing"]),
-        "",
-        "Sections",
     ]
-    m = payload["map"]
-    sec_styles = m.get("section_styles") or {}
+
+
+def _section_lines(an: dict, sec_styles: dict) -> List[str]:
+    lines = ["Sections"]
     for i, sec in enumerate(an["sections"]):
         st = sec_styles.get(i) or sec_styles.get(str(i))
         lines.append(f"  {sec['start_ms'] / 1000:7.1f}s - {sec['end_ms'] / 1000:7.1f}s  {sec['label']:<10}"
                      f" intensity {sec['intensity']:.2f}{'  kiai' if sec['kiai'] else ''}"
                      f"{f'  style: {STYLE_NAMES.get(st, st)}' if st else ''}")
-    lines += ["",
-              "Map",
-              f"  Objects: {m.get('objects')} (circles {m.get('circles')}, sliders {m.get('sliders')}, "
-              f"spinners {m.get('spinners')}, stream notes {m.get('stream_notes')})",
-              f"  Breaks:  {len(m.get('breaks', []))}",
-              f"  Settings: " + ", ".join(f"{k}={v}" for k, v in payload["difficulty_settings"].items()),
-              "",
-              "Validation",
-              f"  Passed: {'yes' if v['ok'] else 'NO'}",
-              "  " + ", ".join(f"{k}={val}" for k, val in v["metrics"].items() if k != "section_density")]
+    return lines
+
+
+def _map_lines(payload: dict) -> List[str]:
+    m = payload["map"]
+    v = payload["validation"]
+    return ["Map",
+            f"  Objects: {m.get('objects')} (circles {m.get('circles')}, sliders {m.get('sliders')}, "
+            f"spinners {m.get('spinners')}, stream notes {m.get('stream_notes')})",
+            f"  Breaks:  {len(m.get('breaks', []))}",
+            f"  Settings: " + ", ".join(f"{k}={v}" for k, v in payload["difficulty_settings"].items()),
+            "",
+            "Validation",
+            f"  Passed: {'yes' if v['ok'] else 'NO'}",
+            "  " + ", ".join(f"{k}={val}" for k, val in v["metrics"].items() if k != "section_density")]
+
+
+def _search_lines(s: dict) -> List[str]:
+    return ["Star-rating search"] + [f"  knob {h['knob']:.3f} -> {h['stars']:.2f} stars ({h['objects']} objects)"
+                                     for h in s["search"]]
+
+
+def _write_report(folder: Path, payload: dict, res: GenerationResult) -> Path:
+    payload["result"] = {"ok": res.ok, "message": res.message, "warnings": res.warnings, "errors": res.errors}
+    payload["extras"] = _extras(res)
+    (folder / "report.json").write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    lines = (_head_lines(payload, res) + _extra_lines(res) + [""] + _star_lines(payload["stars"]) + [""]
+             + _audio_lines(payload["audio"], payload["analysis"]) + [""]
+             + _section_lines(payload["analysis"], payload["map"].get("section_styles") or {}) + [""]
+             + _map_lines(payload))
     if res.errors:
         lines += ["", "Errors"] + [f"  - {e}" for e in res.errors]
     if res.warnings:
         lines += ["", "Warnings"] + [f"  - {w}" for w in res.warnings]
-    lines += ["", "Star-rating search"] + [f"  knob {h['knob']:.3f} -> {h['stars']:.2f} stars ({h['objects']} objects)"
-                                           for h in s["search"]]
+    lines += [""] + _search_lines(payload["stars"])
     p = folder / "report.txt"
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
+
+
+def _write_mapset_report(folder: Path, req: GenerationRequest, sa: SongAnalysis, payloads: List[dict],
+                         res: GenerationResult) -> Path:
+    first = payloads[0]
+    summary = [{"version": d.version, "requested_stars": d.requested_stars, "estimated_lazer": d.estimated_stars,
+                "estimated_stable": d.estimated_stars_stable, "within_tolerance": d.within_tolerance,
+                "valid": d.ok, "exported": d.ok, "style": d.style_used, "objects": d.objects,
+                "coverage_pct": d.coverage_pct, "osu_file": p.get("osu_file"), "errors": d.errors}
+               for d, p in zip(res.difficulties, payloads)]
+    data = {"generator": first["generator"], "input": first["input"], "mapset": True,
+            "metadata": dict(first["metadata"], version=None), "requested_top_stars": req.stars,
+            "tolerance": req.tolerance, "audio": first["audio"], "analysis": first["analysis"],
+            "difficulties": summary, "skipped": res.skipped,
+            "details": {p["metadata"]["version"]: p for p in payloads},
+            "elapsed_s": res.duration_s, "extras": _extras(res),
+            "result":{"ok": res.ok, "message": res.message, "warnings": res.warnings, "errors": res.errors}}
+    (folder / "report.json").write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+
+    lines = _head_lines(first, res) + [f"Mapset:              {len(payloads)} difficulties from one analysis, "
+                                       f"one .osz (BeatmapSetID -1)"] + _extra_lines(res) + ["",
+                                       "Difficulties (easiest first)",
+                                       f"  {'Version':<14}{'requested':>10}{'lazer':>8}{'stable':>8}"
+                                       f"  {'tolerance':<10}{'validation':<12}style"]
+    for d in res.difficulties:
+        lines.append(f"  {d.version:<14}{d.requested_stars:>10.2f}{d.estimated_stars:>8.2f}"
+                     f"{d.estimated_stars_stable:>8.2f}  {'ok' if d.within_tolerance else 'OUTSIDE':<10}"
+                     f"{'passed' if d.ok else 'FAILED':<12}{d.style_used}")
+    if res.skipped:
+        lines += ["", "SKIPPED (failed validation, not in the .osz; drafts kept as 'INVALID DRAFT - ...'): "
+                  + ", ".join(res.skipped)]
+    lines += [""] + _audio_lines(first["audio"], first["analysis"]) + [""] + _section_lines(first["analysis"], {})
+    if res.errors:
+        lines += ["", "Errors"] + [f"  - {e}" for e in res.errors]
+    if res.warnings:
+        lines += ["", "Warnings"] + [f"  - {w}" for w in res.warnings]
+    for d, p in zip(res.difficulties, payloads):
+        lines += ["", "", f"===== [{d.version}] {'' if d.ok else '(SKIPPED) '}" + "=" * 40,
+                  f"File: {p.get('osu_file') or '(not exported)'}", ""]
+        lines += _star_lines(p["stars"]) + [""]
+        if p["map"].get("section_styles"):
+            lines += _section_lines(p["analysis"], p["map"]["section_styles"]) + [""]
+        lines += _map_lines(p)
+        if p["validation"]["errors"]:
+            lines += ["  Errors:"] + [f"    - {e}" for e in p["validation"]["errors"]]
+        lines += [""] + _search_lines(p["stars"])
+    out = folder / "report.txt"
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out

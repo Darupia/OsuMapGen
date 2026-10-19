@@ -23,6 +23,10 @@ def main(argv=None) -> int:
     ap.add_argument("--username", help="your osu! username for the Creator field (CASE-SENSITIVE: "
                                        "must match your profile exactly)")
     ap.add_argument("--tolerance", type=float, default=0.5)
+    ap.add_argument("--mapset", action="store_true", help="make a full mapset: several difficulties from Easy "
+                                                          "up to the target stars, in one .osz")
+    ap.add_argument("--length", default=None, help="map length, e.g. 1:30 (the best part of the song is cut "
+                                                   "out; shorter maps get more detail). Default: full song")
     ap.add_argument("--check", action="store_true", help="check dependencies and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -49,7 +53,8 @@ def main(argv=None) -> int:
 
     req = GenerationRequest(mp3_path=args.mp3, stars=args.stars, style=args.style, output_dir=args.out,
                             title=args.title, artist=args.artist, tolerance=args.tolerance,
-                            creator=args.username)
+                            creator=args.username, mapset=args.mapset,
+                            length=args.length)
     try:
         res = run(req, Progress(callback=cb))
     except (UserFacingError, Cancelled) as e:
@@ -57,9 +62,17 @@ def main(argv=None) -> int:
         return 2
     print()
     print(res.message)
+    if res.length_note:
+        print(res.length_note)
+    if res.detail_level > 1:
+        print(f"Detail: {res.detail_level} versions of every section compared, cleanest kept")
     if res.style_breakdown:
         print(res.style_breakdown)
-    if res.estimated_stars is not None:
+    for d in res.difficulties:
+        print(f"  [{d.version}] requested {d.requested_stars:.2f}, estimated {d.estimated_stars:.2f} (lazer) / "
+              f"{d.estimated_stars_stable:.2f} (stable), {d.objects} objects"
+              + ("" if d.ok else "  SKIPPED: failed validation"))
+    if res.estimated_stars is not None and not res.mapset:
         print(f"Requested {res.requested_stars:.2f} stars; estimated {res.estimated_stars:.2f} (lazer) / "
               f"{res.estimated_stars_stable:.2f} (stable)")
     for w in res.warnings:

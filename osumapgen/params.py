@@ -73,6 +73,19 @@ class MapParams:
     slider_rate: float       # 0..1 preference for sliders on long gaps
     angle_sharpness: float   # 0 = flowing curves, 1 = sharp jumps
     max_distance: float      # hard cap for one jump (px)
+    quarter_bias: float = 0.0     # >0 maps more 1/4 notes (streams), <0 fewer
+    slider_min_gap: float = 0.99  # shortest gap (in beats) a slider may fill
+    slider_force: float = 0.0     # minimum slider probability once a musical slider end exists
+    slider_repeat: float = 0.18   # chance of a repeat slider on a long gap
+    stream_fill: bool = False     # bridge small holes so 1/4 runs become long streams
+    max_tap_s: float = 12.0       # longest stretch of tapping before a slider/buzz-slider breather (s)
+    max_fast_tap_s: float = 10.0  # longest stretch of stream-speed tapping (8+ presses per second) before a breather (s)
+    stack_rate: float = 0.05      # chance a half-beat-or-closer note sits on the previous note (a stack)
+    stream_step: float = 0.0      # chance a long stream steps its spacing up as it builds
+    run_slider_end: float = 0.0   # chance a stream run ends on a short slider (kick / 3-slide / short)
+    dotted_rate: float = 0.0      # chance a half-beat gap is stretched to a dotted 3/4 beat when the audio has the onset
+    kick_chance: float = 0.0      # chance a slider becomes a kick slider (one reverse, short slides)
+    buzz_chance: float = 0.3      # share of breathers that are buzz sliders
 
     def level(self, intensity: float) -> float:
         return self.level_lo + (self.level_hi - self.level_lo) * intensity
@@ -99,29 +112,86 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
     if style == "simple":
         p.level_hi = min(p.level_hi, 0.6 + 2.6 * k)
         p.jump_boost = 1.0 + 0.1 * k
-        p.max_burst = min(p.max_burst, 5)
-        p.angle_sharpness *= 0.5
-        p.slider_rate = min(0.9, p.slider_rate + 0.1)
-    elif style == "stream":
-        p.level_hi += 0.35
-        p.spacing *= 0.85
-        p.max_burst = max(p.max_burst, int(8 + 24 * k))
-        p.stream_spacing *= 1.1
-    elif style == "jump":
-        p.level_hi = min(p.level_hi, 3.0)
-        p.level_lo = min(p.level_lo, 2.2)
-        p.spacing *= 1.2
-        p.jump_boost += 0.2
         p.max_burst = min(p.max_burst, 3)
-        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
-        p.slider_rate *= 0.7
+        p.angle_sharpness *= 0.4
+        p.spacing *= 0.8
+        p.slider_rate = min(0.9, p.slider_rate + 0.15)
+        p.quarter_bias = -0.4
+        p.max_tap_s = 14.0
+        p.stack_rate = 0.02
+    elif style == "stream":
+        # long, varied 1/4 streams with slider "kicks" between them
+        p.level_hi = min(p.level_hi + 0.2, 3.7)   # note count saturates early; the rest of the difficulty is spacing
+        p.quarter_bias = 0.6
+        p.stream_fill = True
+        p.spacing *= 1.1                   # wider hops between runs: difficulty comes from distance, not note count
+        p.jump_boost += 0.3
+        p.max_burst = max(p.max_burst, int(14 + 20 * k))
+        p.stream_spacing *= 1.5
+        p.slider_rate = 0.55
+        p.slider_force = 0.4
+        p.slider_min_gap = 0.49
+        p.angle_sharpness *= 0.6
+        p.max_tap_s = 10.0
+        p.max_fast_tap_s = 8.0
+        p.buzz_chance = 0.25
+        p.stack_rate = 0.08
+        p.stream_step = 0.5
+        p.run_slider_end = 0.35
+        p.kick_chance = 0.04
+    elif style == "jump":
+        # sparse rhythm, wide spacing, many sliders; difficulty comes from distance
+        p.level_hi = min(p.level_hi, 2.0)
+        p.level_lo = min(p.level_lo, 1.5)
+        p.quarter_bias = -1.0
+        p.spacing *= 1.7
+        p.jump_boost += 0.5
+        p.max_burst = 2
+        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.3)
+        p.slider_rate = 0.8
+        p.slider_force = 0.55
+        p.slider_min_gap = 0.49
+        p.slider_repeat = 0.12
+        p.max_distance = min(470.0, p.max_distance + 60)
+        p.max_tap_s = 12.0
+        p.buzz_chance = 0.0                # human jump maps almost never use buzz sliders: rest comes from gaps and long sliders
+        p.stack_rate = 0.06
     elif style == "tech":
-        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.2)
-        p.slider_rate = min(0.9, p.slider_rate + 0.1)
-        p.max_burst = min(p.max_burst, 9)
+        # odd angles, short and repeat sliders, small bursts
+        p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
+        p.slider_rate = 0.65
+        p.slider_force = 0.45
+        p.slider_min_gap = 0.49
+        p.slider_repeat = 0.2
+        p.spacing *= 1.15
+        p.jump_boost += 0.2
+        p.quarter_bias = 0.1
+        p.max_burst = min(p.max_burst, 4)
+        p.max_tap_s = 11.0
+        p.buzz_chance = 0.25
+        p.stack_rate = 0.14
+        p.kick_chance = 0.22
+        p.dotted_rate = 0.5
+        p.run_slider_end = 0.5
+        p.stream_step = 0.2
+    elif style == "balanced":
+        p.spacing *= 1.15
+        p.jump_boost += 0.2
+        p.slider_force = 0.25
+        p.slider_min_gap = 0.6
+        p.buzz_chance = 0.1
+        p.stack_rate = 0.07
+        p.slider_repeat = 0.08
     elif style == "slider":
-        p.slider_rate = min(0.95, p.slider_rate + 0.3)
+        p.slider_rate = 0.95
+        p.slider_force = 0.8
+        p.slider_min_gap = 0.49
+        p.slider_repeat = 0.3
         p.level_hi -= 0.2
+        p.max_burst = min(p.max_burst, 3)
+        p.quarter_bias = -0.3
+        p.max_tap_s = 15.0
+        p.stack_rate = 0.03
     return p
 
 
@@ -167,7 +237,7 @@ def mix_styles(sa: SongAnalysis, stars: float) -> Dict[int, str]:
         # presets that suit this section, best fit first
         if I < 0.4 or s.label in ("intro", "outro", "breakdown"):
             fits = ["slider", "simple"] if f["sustain"] > 0.35 else ["simple", "slider"]
-        elif I >= 0.75 and f["fast"] > 0.6:
+        elif I >= 0.6 and f["fast"] > 0.4:
             fits = ["stream", "jump", "tech"]
         elif I >= 0.75:
             fits = ["jump", "tech", "balanced"]

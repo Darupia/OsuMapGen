@@ -11,6 +11,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import APP_NAME, __version__
 from .deps import check_dependencies
+from .length import FULL_SONG, LENGTH_CHOICES, parse_length
+
+LENGTH_HINT = ("Shorter maps are more detailed than longer ones: every section is generated several times "
+               "(up to 6 versions for a 1-minute map) and the cleanest, most varied version is kept. "
+               "The best part of the song (with the chorus) is cut out; your MP3 is not changed.")
 from .infra import (Cancelled, Progress, STYLES, USERNAME_HINT, Settings, UserFacingError, check_username,
                     get_logger, setup_logging)
 
@@ -60,25 +65,38 @@ class App:
 
         ttk.Label(main, text="Mapping style:").grid(row=3, column=0, sticky="w")
         self.style_var = tk.StringVar(value=self.settings.style)
-        ttk.Combobox(main, textvariable=self.style_var, values=STYLES, state="readonly", width=24).grid(
-            row=3, column=1, sticky="w", padx=6)
+        stf = ttk.Frame(main)
+        stf.grid(row=3, column=1, columnspan=2, sticky="w", padx=6)
+        ttk.Combobox(stf, textvariable=self.style_var, values=STYLES, state="readonly", width=24).pack(side="left")
+        self.mapset_var = tk.BooleanVar(value=self.settings.mapset)
+        ttk.Checkbutton(stf, text="Make a full mapset (Easy to your target)", variable=self.mapset_var).pack(
+            side="left", padx=(12, 0))
 
         # osu! username (Creator) and optional details share row 4
         row4 = ttk.Frame(main)
         row4.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         row4.columnconfigure(1, weight=1)
-        ttk.Label(row4, text="osu! username:").grid(row=0, column=0, sticky="w")
+        # map length: the best part of the song is cut out; shorter maps get more detail passes
+        ttk.Label(row4, text="Map length:").grid(row=0, column=0, sticky="w")
+        lf = ttk.Frame(row4)
+        lf.grid(row=0, column=1, sticky="w", padx=(18, 0))
+        self.length_var = tk.StringVar(value=self.settings.length or FULL_SONG)
+        ttk.Combobox(lf, textvariable=self.length_var, values=LENGTH_CHOICES, width=16).pack(side="left")
+        ttk.Label(lf, text="  or type minutes:seconds, e.g. 1:45", foreground="#666").pack(side="left")
+        ttk.Label(row4, text=LENGTH_HINT, foreground="#666", wraplength=560, justify="left").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ttk.Label(row4, text="osu! username:").grid(row=2, column=0, sticky="w")
         self.user_var = tk.StringVar(value=self.settings.username)
         uf = ttk.Frame(row4)
-        uf.grid(row=0, column=1, sticky="w", padx=(18, 0))
+        uf.grid(row=2, column=1, sticky="w", padx=(18, 0))
         ttk.Entry(uf, textvariable=self.user_var, width=20).pack(side="left")
         ttk.Label(uf, text="  CASE-SENSITIVE", foreground="#c0392b", font=("Segoe UI", 9, "bold")).pack(side="left")
         ttk.Label(uf, text="  (optional, needed only to upload)", foreground="#666").pack(side="left")
         ttk.Label(row4, text=USERNAME_HINT, foreground="#666", wraplength=560, justify="left").grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+            row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
         self.more = tk.BooleanVar(value=False)
         ttk.Checkbutton(row4, text="Optional details (title, artist, output folder)", variable=self.more,
-                        command=self.toggle_more).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                        command=self.toggle_more).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.more_frame = ttk.Frame(main)
         self.more_frame.columnconfigure(1, weight=1)
         self.title_var = tk.StringVar()
@@ -138,6 +156,9 @@ class App:
         self.open_osu_btn.pack(side="left", padx=6)
         self.report_btn = ttk.Button(btns, text="View Report", command=self.open_report, state="disabled")
         self.report_btn.pack(side="left")
+        self.preview_btn = ttk.Button(btns, text="Play timing preview", command=self.open_preview,
+                                      state="disabled")
+        self.preview_btn.pack(side="left", padx=(6, 0))
 
         self.footer = tk.StringVar(value="")
         ttk.Label(main, textvariable=self.footer, foreground="#777").grid(row=10, column=0, columnspan=3,
@@ -259,18 +280,26 @@ class App:
             return
         s.last_mp3, s.stars, s.style, s.output_dir, s.tolerance = mp3, stars, self.style_var.get(), \
             self.out_var.get(), tol
+        length_text = self.length_var.get().strip() or FULL_SONG
+        try:
+            parse_length(length_text)
+        except UserFacingError as e:
+            messagebox.showwarning(APP_NAME, str(e))
+            return
         s.username = username
+        s.mapset = bool(self.mapset_var.get())
+        s.length = length_text
         s.save()
 
         from .pipeline import GenerationRequest
         req = GenerationRequest(mp3_path=mp3, stars=stars, style=self.style_var.get(),
                                 output_dir=self.out_var.get(), title=self.title_var.get() or None,
                                 artist=self.artist_var.get() or None, tolerance=tol, offset_ms=s.offset_ms,
-                                creator=username or None)
+                                creator=username or None, mapset=s.mapset, length=length_text)
         self.progress = Progress(callback=lambda v, m: self.q.put(("progress", v, m)))
         self.gen_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
-        for b in (self.open_folder_btn, self.open_osu_btn, self.report_btn):
+        for b in (self.open_folder_btn, self.open_osu_btn, self.report_btn, self.preview_btn):
             b.configure(state="disabled")
         self.stars_info.set("")
         self.set_details("")
@@ -333,8 +362,19 @@ class App:
         self.reset_buttons()
         self.pbar["value"] = 1000 if res.ok else self.pbar["value"]
         self.status.set(res.message)
-        if res.estimated_stars is not None:
-            mark = "within tolerance" if res.within_tolerance else "OUTSIDE tolerance - see notes"
+        if res.difficulties:
+            rows = []
+            for d in res.difficulties:
+                if not d.ok:
+                    rows.append(f"{d.version}: SKIPPED (failed validation; see report)")
+                    continue
+                mark = "" if d.within_tolerance else "   [outside tolerance]"
+                rows.append(f"{d.version}: requested {d.requested_stars:.2f}  ->  estimated "
+                            f"{d.estimated_stars:.2f} (lazer) / {d.estimated_stars_stable:.2f} (stable)"
+                            f"   {d.objects} objects{mark}")
+            self.stars_info.set("Full mapset, one .osz:\n" + "\n".join(rows))
+        elif res.estimated_stars is not None:
+            mark ="within tolerance" if res.within_tolerance else "OUTSIDE tolerance - see notes"
             self.stars_info.set(
                 f"Requested: {res.requested_stars:.2f} stars     Estimated: {res.estimated_stars:.2f} stars "
                 f"(lazer)  /  {res.estimated_stars_stable:.2f} (stable)   [{mark}]\n"
@@ -347,6 +387,10 @@ class App:
             notes.append("Notes:\n" + "\n".join("  - " + w for w in res.warnings[:12]))
         if res.style_breakdown:
             notes.insert(0, res.style_breakdown)
+        if res.length_note:
+            notes.insert(0, res.length_note)
+        if res.detail_level > 1:
+            notes.insert(0, f"Detail: {res.detail_level} versions of every section compared, cleanest kept.")
         if res.osz_path:
             notes.insert(0, f"Package: {res.osz_path}")
         self.set_details("\n\n".join(notes))
@@ -357,6 +401,8 @@ class App:
             self.report_btn.configure(state="normal")
         if res.osz_path:
             self.open_osu_btn.configure(state="normal")
+        if getattr(res, "preview_path", None):
+            self.preview_btn.configure(state="normal")
         if not res.ok:
             messagebox.showwarning(APP_NAME, res.message)
 
@@ -396,6 +442,12 @@ class App:
         from .packaging import open_folder
         if self.result and self.result.report_path:
             open_folder(Path(self.result.report_path))
+
+    def open_preview(self):
+        from .packaging import open_folder
+        if self.result and getattr(self.result, "preview_path", None):
+            open_folder(Path(self.result.preview_path))     # default audio player
+            self.status.set("Playing the song with a click on every note - listen for clicks off the beat.")
 
     def on_close(self):
         if self.worker and self.worker.is_alive():
