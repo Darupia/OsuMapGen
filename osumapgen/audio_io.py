@@ -69,6 +69,32 @@ def probe(path: str) -> AudioInfo:
     )
 
 
+def _image_ext(data: bytes) -> str | None:
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    return None
+
+
+def cover_art(path: str) -> Tuple[bytes, str] | None:
+    """Embedded cover image (ID3 APIC) as (bytes, ".jpg"/".png"), preferring the front cover."""
+    try:
+        import mutagen
+        mf = mutagen.File(str(path))
+        frames = list(mf.tags.getall("APIC")) if mf is not None and hasattr(mf.tags, "getall") else []
+    except Exception as e:
+        log.info("No cover art read from %s: %s", path, e)
+        return None
+    frames.sort(key=lambda f: getattr(f, "type", 0) != 3)      # 3 = front cover
+    for f in frames:
+        data = bytes(getattr(f, "data", b"") or b"")
+        ext = _image_ext(data)
+        if ext and len(data) >= 64:
+            return data, ext
+    return None
+
+
 def _decode_ffmpeg(ffmpeg: str, path: str, sr: int) -> np.ndarray:
     cmd = [ffmpeg, "-nostdin", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(sr),
            "-f", "f32le", "-"]

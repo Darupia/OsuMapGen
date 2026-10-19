@@ -8,7 +8,7 @@ import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence, Union
 
 from .serializer import ascii_fallback, safe_filename
 
@@ -34,15 +34,38 @@ def audio_filename(src: str) -> str:
     return "audio" + Path(src).suffix.lower()
 
 
-def build_osz(folder: Path, osu_name: str, audio_name: str, osz_name: str) -> Path:
+def build_osz(folder: Path, osu_names: Union[str, Sequence[str]], audio_name: str, osz_name: str,
+              extra_files: Sequence[str] = ()) -> Path:
+    """Package one or more .osu files (difficulties of one mapset) with their shared audio.
+    extra_files (e.g. the background image) are already-compressed files stored next to them."""
+    if isinstance(osu_names, str):
+        osu_names = [osu_names]
     osz = folder / osz_name
     tmp = osz.with_suffix(".osz.part")
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        z.write(folder / osu_name, arcname=osu_name)
+        for name in osu_names:
+            z.write(folder / name, arcname=name)
         # audio is already compressed; store it
         z.write(folder / audio_name, arcname=audio_name, compress_type=zipfile.ZIP_STORED)
+        for name in extra_files:
+            z.write(folder / name, arcname=name, compress_type=zipfile.ZIP_STORED)
     os.replace(tmp, osz)
     return osz
+
+
+BACKGROUND_STEM = "background"
+
+
+def background_filename(ext: str) -> str:
+    return BACKGROUND_STEM + ext
+
+
+def write_background(art: tuple, folder: Path) -> str:
+    """Save embedded cover art (bytes, ext) as the map background; returns its file name."""
+    data, ext = art
+    name = background_filename(ext)
+    (folder / name).write_bytes(data)
+    return name
 
 
 def copy_audio(src: str, folder: Path) -> str:

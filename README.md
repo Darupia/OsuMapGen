@@ -24,7 +24,18 @@ sliders or simple patterns on calm or held parts, technical and balanced pattern
 The overall star target still applies to the whole map. The result window and `report.txt` list which
 style each section got. Easy maps (below 3★) leave streams and technical patterns out of the mix.
 
-Your last song folder, stars, style, username and output folder are remembered.
+**Full mapset:** tick **Make a full mapset (Easy to your target)** next to the style picker to get
+several difficulties of the same song in **one** `.osz`. The song is analysed once. Each difficulty is then
+generated and checked separately at 2.0, 3.2, 4.4 and 5.6★, up to your target. Your target is always the
+hardest difficulty: spread steps above it (or less than 0.5★ below it) are left out, and a target above
+5.6★ adds one more on top. Each difficulty is named by its estimated stars, using osu!'s usual names
+(Easy < 2.0, Normal < 2.7, Hard < 4.0, Insane < 5.3, Expert < 6.5, Expert+). All of them share
+`audio.mp3`, the title, the artist and the creator. The result panel and `report.txt` list every
+difficulty with its requested and estimated stars. If one difficulty fails validation, the others are
+still exported, and the report and status line say which one was **skipped** (its draft is kept as
+`INVALID DRAFT - ...osu`). From the command line, add `--mapset`.
+
+Your last song folder, stars, style, username, mapset choice and output folder are remembered.
 Click **Optional details** to correct the title or artist, or to change the output folder.
 
 **Requirements:** Windows with Python 3.10–3.13 (3.12 is installed on this PC).
@@ -44,6 +55,12 @@ Each run creates a new folder in `Documents\OsuMapGen Output\` (names never coll
 | `audio.mp3` | your song, copied unchanged |
 | `Artist - Title (4.0 stars).osz` | package for import into osu! |
 | `report.txt` / `report.json` | requested and estimated stars, timing, sections, coverage, validation, warnings |
+| `preview with clicks.mp3` | your song with a click on every note (higher pitch = new combo, softer = slider end/repeat) — check the timing by ear without osu!. Not part of the `.osz`. Falls back to `.wav` if no MP3 encoder is available |
+| `background.jpg` / `.png` | only if the MP3 has embedded cover art: used as the map background and packaged in the `.osz` |
+
+**Play timing preview** in the result panel opens the click preview in your default player: every click
+should land on a beat or sound in the song. Clicks that drift ahead of or behind the music mean the
+detected timing (BPM/offset) is off for that part of the song.
 
 ## Star ratings: what the numbers mean
 
@@ -85,6 +102,7 @@ reasonable map is kept and the report says why. For example, a 140 BPM song tops
 
 ```bash
 "%LOCALAPPDATA%\OsuMapGen\venv\Scripts\python.exe" -m osumapgen "song.mp3" 4.5 --style "Jump-focused"
+"%LOCALAPPDATA%\OsuMapGen\venv\Scripts\python.exe" -m osumapgen "song.mp3" 6.0 --mapset
 ```
 
 ## Tests
@@ -103,6 +121,7 @@ malformed objects, unreachable star targets, `.osz` packaging, determinism and t
   nobody has played them yet.
 * 4/4 meter is assumed. Waltzes and odd meters get a valid grid, but bar lines may be placed oddly.
 * The beat grid offers 1/4 and 1/3 subdivisions per section (no 1/6 or 1/8 snaps).
-* Hitsounds are basic (finish, clap and whistle on accents). There is no background image or storyboard.
+* Hitsounds are basic (finish, clap and whistle on accents). There is no storyboard, and a background image only when
+  the MP3 has embedded cover art.
 * Maps were checked with an independent parser and rosu-pp. They were not opened in osu! during
   development; please report anything osu! rejects.

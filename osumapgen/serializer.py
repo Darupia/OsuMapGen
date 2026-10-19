@@ -20,6 +20,7 @@ class Metadata:
     version: str = "Generated"
     source: str = ""
     tags: str = "osumapgen generated"
+    background: str = ""          # image file next to the .osu, e.g. "background.jpg"
 
 
 def ascii_fallback(s: str) -> str:
@@ -126,8 +127,10 @@ def serialize(sa: SongAnalysis, m: GeneratedMap, meta: Metadata, audio_filename:
             f"SliderTickRate:{_fmt(d.slider_tick_rate)}",
             ""]
     out += ["[Events]",
-            "//Background and Video events",
-            "//Break Periods"]
+            "//Background and Video events"]
+    if meta.background:
+        out.append(f'0,0,"{meta.background}",0,0')
+    out += ["//Break Periods"]
     out += [f"2,{a},{b}" for a, b in m.breaks]
     out += ["//Storyboard Layer 0 (Background)",
             "//Storyboard Layer 1 (Fail)",
