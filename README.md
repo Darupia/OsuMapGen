@@ -35,7 +35,21 @@ difficulty with its requested and estimated stars. If one difficulty fails valid
 still exported, and the report and status line say which one was **skipped** (its draft is kept as
 `INVALID DRAFT - ...osu`). From the command line, add `--mapset`.
 
-Your last song folder, stars, style, username, mapset choice and output folder are remembered.
+**Map length:** choose *Full song*, 1:00, 1:30 (TV size), 2:00, 2:30 or 3:00, or type your own
+(for example `1:45`). The app picks the best part of the song for that length. It starts and ends on
+section boundaries, keeps the most intense part (usually the chorus), and adds a short fade-out. It
+cuts that part to a new MP3 for the map; your original file is never changed. If the song is already
+about that long, the whole song is mapped.
+
+**Shorter maps are more detailed than longer ones.** Every section is generated several times and the
+cleanest version is kept: the one with the fewest overlapping notes, the least copy-paste and the most
+varied angles and patterns. A 1-minute map compares 6 versions per section, 1:30 compares 4, 2:00
+compares 3, 3:00 compares 2, and songs of about 4 minutes or more use 1. The star target is
+re-checked afterwards. On real songs this raised the readability score of 1:30 maps by 3-14%. The
+report shows which part was mapped and how many versions were compared. On the command line, use
+`--length 1:30`.
+
+Your last song folder, stars, style, username, mapset choice, map length and output folder are remembered.
 Click **Optional details** to correct the title or artist, or to change the output folder.
 
 **Requirements:** Windows with Python 3.10–3.13 (3.12 is installed on this PC).

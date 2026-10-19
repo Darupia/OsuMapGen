@@ -11,6 +11,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import APP_NAME, __version__
 from .deps import check_dependencies
+from .length import FULL_SONG, LENGTH_CHOICES, parse_length
+
+LENGTH_HINT = ("Shorter maps are more detailed than longer ones: every section is generated several times "
+               "(up to 6 versions for a 1-minute map) and the cleanest, most varied version is kept. "
+               "The best part of the song (with the chorus) is cut out; your MP3 is not changed.")
 from .infra import (Cancelled, Progress, STYLES, USERNAME_HINT, Settings, UserFacingError, check_username,
                     get_logger, setup_logging)
 
@@ -71,18 +76,27 @@ class App:
         row4 = ttk.Frame(main)
         row4.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         row4.columnconfigure(1, weight=1)
-        ttk.Label(row4, text="osu! username:").grid(row=0, column=0, sticky="w")
+        # map length: the best part of the song is cut out; shorter maps get more detail passes
+        ttk.Label(row4, text="Map length:").grid(row=0, column=0, sticky="w")
+        lf = ttk.Frame(row4)
+        lf.grid(row=0, column=1, sticky="w", padx=(18, 0))
+        self.length_var = tk.StringVar(value=self.settings.length or FULL_SONG)
+        ttk.Combobox(lf, textvariable=self.length_var, values=LENGTH_CHOICES, width=16).pack(side="left")
+        ttk.Label(lf, text="  or type minutes:seconds, e.g. 1:45", foreground="#666").pack(side="left")
+        ttk.Label(row4, text=LENGTH_HINT, foreground="#666", wraplength=560, justify="left").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ttk.Label(row4, text="osu! username:").grid(row=2, column=0, sticky="w")
         self.user_var = tk.StringVar(value=self.settings.username)
         uf = ttk.Frame(row4)
-        uf.grid(row=0, column=1, sticky="w", padx=(18, 0))
+        uf.grid(row=2, column=1, sticky="w", padx=(18, 0))
         ttk.Entry(uf, textvariable=self.user_var, width=20).pack(side="left")
         ttk.Label(uf, text="  CASE-SENSITIVE", foreground="#c0392b", font=("Segoe UI", 9, "bold")).pack(side="left")
         ttk.Label(uf, text="  (optional, needed only to upload)", foreground="#666").pack(side="left")
         ttk.Label(row4, text=USERNAME_HINT, foreground="#666", wraplength=560, justify="left").grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+            row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
         self.more = tk.BooleanVar(value=False)
         ttk.Checkbutton(row4, text="Optional details (title, artist, output folder)", variable=self.more,
-                        command=self.toggle_more).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                        command=self.toggle_more).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.more_frame = ttk.Frame(main)
         self.more_frame.columnconfigure(1, weight=1)
         self.title_var = tk.StringVar()
@@ -266,15 +280,22 @@ class App:
             return
         s.last_mp3, s.stars, s.style, s.output_dir, s.tolerance = mp3, stars, self.style_var.get(), \
             self.out_var.get(), tol
+        length_text = self.length_var.get().strip() or FULL_SONG
+        try:
+            parse_length(length_text)
+        except UserFacingError as e:
+            messagebox.showwarning(APP_NAME, str(e))
+            return
         s.username = username
         s.mapset = bool(self.mapset_var.get())
+        s.length = length_text
         s.save()
 
         from .pipeline import GenerationRequest
         req = GenerationRequest(mp3_path=mp3, stars=stars, style=self.style_var.get(),
                                 output_dir=self.out_var.get(), title=self.title_var.get() or None,
                                 artist=self.artist_var.get() or None, tolerance=tol, offset_ms=s.offset_ms,
-                                creator=username or None, mapset=s.mapset)
+                                creator=username or None, mapset=s.mapset, length=length_text)
         self.progress = Progress(callback=lambda v, m: self.q.put(("progress", v, m)))
         self.gen_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
@@ -366,6 +387,10 @@ class App:
             notes.append("Notes:\n" + "\n".join("  - " + w for w in res.warnings[:12]))
         if res.style_breakdown:
             notes.insert(0, res.style_breakdown)
+        if res.length_note:
+            notes.insert(0, res.length_note)
+        if res.detail_level > 1:
+            notes.insert(0, f"Detail: {res.detail_level} versions of every section compared, cleanest kept.")
         if res.osz_path:
             notes.insert(0, f"Package: {res.osz_path}")
         self.set_details("\n\n".join(notes))

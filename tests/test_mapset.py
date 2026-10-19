@@ -111,6 +111,7 @@ def test_cli_mapset_flag(monkeypatch):
     class Res:
         ok, message, style_breakdown, estimated_stars, warnings, errors = True, "ok", "", None, [], []
         difficulties, mapset, osz_path, report_path = [], True, None, None
+        length_note, detail_level = "", 1
 
     monkeypatch.setattr(pipeline, "run", lambda req, progress=None: seen.setdefault("req", req) and Res())
     assert cli.main(["song.mp3", "5", "--mapset"]) == 0

@@ -57,7 +57,10 @@ def select_ticks(sa: SongAnalysis, P: SectionParams) -> List[int]:
             elif bib == 2:
                 take = L >= 0.45 or on >= 0.5
             else:
-                take = L >= 1.0 or (L >= 0.6 and on >= 0.6) or (L >= 0.3 and on >= 0.9 and g.low > 0.3)
+                # onsets are normalised locally, so in calm sections a soft hi-hat scores as "strong":
+                # there only weight (low end) or a higher level earns the off-beats
+                strong = on >= 0.6 and s.intensity >= 0.3
+                take = L >= 1.0 or (L >= 0.6 and strong) or (L >= 0.3 and on >= 0.9 and g.low > 0.3)
             if take and on < 0.05 and L < 1.3 and g.sustain < 0.2 and bib != 0:
                 take = False
         elif c == "half":

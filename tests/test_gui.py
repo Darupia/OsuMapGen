@@ -137,3 +137,22 @@ def test_full_mapset_through_gui(app, song, tmp_path):
         assert d.version in info and f"{d.estimated_stars:.2f}" in info
     from osumapgen.infra import Settings
     assert Settings.load().mapset is True
+
+
+def test_map_length_is_remembered_and_validated(app, song, tmp_path, monkeypatch):
+    from osumapgen import gui
+    shown = []
+    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *a, **k: shown.append(a))
+    p, _ = song("full")
+    app.mp3_var.set(str(p))
+    app.stars_var.set("3")
+    app.length_var.set("not a time")
+    app.generate()
+    assert app.worker is None and shown                       # bad length blocked before any work
+    app.length_var.set("1:00")
+    app.out_var.set(str(tmp_path / "gui_len"))
+    app.generate()
+    run_until_done(app)
+    assert app.result.ok and app.result.length_note.startswith("Mapped ")
+    from osumapgen.infra import Settings
+    assert Settings.load().length == "1:00"

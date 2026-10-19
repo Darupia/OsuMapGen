@@ -25,6 +25,8 @@ def main(argv=None) -> int:
     ap.add_argument("--tolerance", type=float, default=0.5)
     ap.add_argument("--mapset", action="store_true", help="make a full mapset: several difficulties from Easy "
                                                           "up to the target stars, in one .osz")
+    ap.add_argument("--length", default=None, help="map length, e.g. 1:30 (the best part of the song is cut "
+                                                   "out; shorter maps get more detail). Default: full song")
     ap.add_argument("--check", action="store_true", help="check dependencies and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -51,7 +53,8 @@ def main(argv=None) -> int:
 
     req = GenerationRequest(mp3_path=args.mp3, stars=args.stars, style=args.style, output_dir=args.out,
                             title=args.title, artist=args.artist, tolerance=args.tolerance,
-                            creator=args.username, mapset=args.mapset)
+                            creator=args.username, mapset=args.mapset,
+                            length=args.length)
     try:
         res = run(req, Progress(callback=cb))
     except (UserFacingError, Cancelled) as e:
@@ -59,6 +62,10 @@ def main(argv=None) -> int:
         return 2
     print()
     print(res.message)
+    if res.length_note:
+        print(res.length_note)
+    if res.detail_level > 1:
+        print(f"Detail: {res.detail_level} versions of every section compared, cleanest kept")
     if res.style_breakdown:
         print(res.style_breakdown)
     for d in res.difficulties:

@@ -9,7 +9,11 @@ from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, analysis, audio_io, generator, packaging, preview, serializer, star_rating, validator
+import shutil
+import tempfile
+
+from . import (__version__, analysis, audio_io, detail, generator, length, packaging, preview, serializer,
+               star_rating, validator)
 from .infra import Cancelled, Progress, UserFacingError, check_username, get_logger
 from .model import GeneratedMap, SongAnalysis
 from .params import KNOB_MAX, STYLE_KEYS, initial_knob, resolve_style
@@ -35,6 +39,11 @@ class GenerationRequest:
     offset_ms: float = 0.0
     creator: Optional[str] = None     # the player's osu! username, exactly as on their profile
     mapset: bool = False              # several difficulties (Easy up to `stars`) in one .osz
+    length: Optional[str] = None      # "Full song" / None, or a length such as "1:30"; the best part is cut out
+    # set by run() when the song is cut (not by callers)
+    source_path: Optional[str] = None
+    cut_note: str = ""
+    map_seconds: Optional[float] = None
 
 
 @dataclass
@@ -75,6 +84,8 @@ class GenerationResult:
     preview_path: Optional[str] = None      # song + click track, for checking timing by ear (not in the .osz)
     background_path: Optional[str] = None   # cover art from the MP3, used as the map background
     mapset: bool = False
+    length_note: str = ""                   # which part of the song was mapped, when it was cut
+    detail_level: int = 1                   # versions generated per section (more for shorter maps)
     difficulties: List[DifficultyResult] = field(default_factory=list)  # mapset only, easiest first
     skipped: List[str] = field(default_factory=list)                    # mapset difficulties not exported
 
@@ -211,12 +222,26 @@ def _prepare(req: GenerationRequest, res: GenerationResult, progress: Progress):
 
 
 def _build(sa, target, style_key, seed, meta, audio_name, progress, tol, gen_stage="generate",
-           val_stage="validate"):
-    """Star search, then validation with bounded, section-targeted regeneration."""
+           val_stage="validate", versions: int = 1):
+    """Star search, detail passes (several versions per section, best kept), then validation
+    with bounded, section-targeted regeneration."""
     progress.check()
     best, history = search_knob(sa, target, style_key, seed, meta, audio_name, progress, tol, gen_stage)
     attempts: Dict[int, int] = {}
     cand = best
+    if versions > 1:
+        progress.update(gen_stage, 0.95, f"Adding detail: comparing {versions} versions of every section")
+        chosen = detail.refine_sections(
+            sa, target, style_key, best.knob, seed, versions,
+            on_step=lambda f: progress.update(gen_stage, 0.95 + 0.05 * f,
+                                              f"Adding detail: comparing {versions} versions of every section"))
+        if chosen:
+            refined = _evaluate(sa, target, style_key, best.knob, seed, chosen, meta, audio_name)
+            # keep the detailed version unless it drifted away from the star target
+            if abs(refined.stars - target) <= max(tol / 2, abs(best.stars - target) + 0.05):
+                cand, attempts = refined, dict(chosen)
+            else:
+                log.info("Detail pass moved stars to %.2f; kept the undetailed map", refined.stars)
     rep = None
     for attempt in range(MAX_REPAIR_ATTEMPTS + 1):
         progress.update(val_stage, attempt / (MAX_REPAIR_ATTEMPTS + 1), "Validating map")
@@ -266,7 +291,7 @@ def _osz_name(folder: Path, artist: str, title: str, label: str) -> str:
 
 def _cover(req: GenerationRequest):
     """(art, background file name) from the MP3's embedded cover; (None, "") when it has none."""
-    art = audio_io.cover_art(req.mp3_path)
+    art = audio_io.cover_art(req.source_path or req.mp3_path)      # a cut MP3 has no cover; use the original
     return art, (packaging.background_filename(art[1]) if art else "")
 
 
@@ -291,16 +316,77 @@ def _output_base(req: GenerationRequest) -> Path:
     return Path(req.output_dir) if req.output_dir else Path.home() / "Documents" / "OsuMapGen Output"
 
 
+CUT_WEIGHT = 12          # progress-bar share of choosing and cutting the part of the song
+
+
+def _plan_single(progress: Progress, cut: bool) -> None:
+    progress.plan([("cut", CUT_WEIGHT if cut else 0), ("decode", 8), ("features", 14), ("timing", 10),
+                   ("structure", 6), ("generate", 45), ("validate", 7), ("package", 10)])
+
+
+def _plan_mapset(progress: Progress, cut: bool, n: int) -> None:
+    stages = [("cut", CUT_WEIGHT if cut else 0), ("decode", 8), ("features", 14), ("timing", 10), ("structure", 6)]
+    for i in range(n):
+        stages += [(f"generate{i}", 45 / n), (f"validate{i}", 7 / n)]
+    progress.plan(stages + [("package", 10)])
+
+
+def _apply_length(req: GenerationRequest, seconds: float, progress: Progress, workdir: Path) -> GenerationRequest:
+    """Analyse the whole song, pick the best part of about `seconds`, cut it to a new MP3 in workdir."""
+    sub = Progress(callback=lambda v, m: progress.update("cut", 0.85 * v, f"Choosing the part to map: {m}"))
+    sub.plan([("decode", 8), ("features", 14), ("timing", 10), ("structure", 6)])
+    full = analysis.analyse(req.mp3_path, sub, offset_ms=req.offset_ms)
+    plan = length.choose_window(full, seconds)
+    total = length.fmt_time(full.audio.duration_ms)
+    if plan is None:
+        return replace(req, map_seconds=(full.music_end_ms - full.music_start_ms) / 1000.0,
+                       cut_note=f"Full song mapped: it is already about {length.fmt_time(seconds * 1000)} "
+                                f"long ({total}).")
+    progress.update("cut", 0.9, f"Cutting {length.fmt_time(plan.start_ms)}-{length.fmt_time(plan.end_ms)}")
+    cut_path = length.cut_audio(req.mp3_path, plan, workdir / Path(req.mp3_path).name)
+    title, artist = req.title, req.artist
+    if not (title and artist):      # keep the original's tags in case the cut lost them
+        title = title or full.audio.title
+        artist = artist or full.audio.artist
+    note = (f"Mapped {length.fmt_time(plan.start_ms)}-{length.fmt_time(plan.end_ms)} of the {total} song "
+            f"({length.fmt_time(plan.end_ms - plan.start_ms)} requested about "
+            f"{length.fmt_time(seconds * 1000)}; cut on {plan.reason}, with a short fade-out). "
+            "The original file is unchanged.")
+    progress.update("cut", 1.0, "Cut ready")
+    return replace(req, mp3_path=str(cut_path), source_path=req.mp3_path, title=title, artist=artist,
+                   cut_note=note, map_seconds=plan.length_s)
+
+
 def run(req: GenerationRequest, progress: Optional[Progress] = None) -> GenerationResult:
     progress = progress or Progress()
-    if req.mapset:
-        return run_mapset(req, progress)
-    progress.plan([("decode", 8), ("features", 14), ("timing", 10), ("structure", 6),
-                   ("generate", 45), ("validate", 7), ("package", 10)])
+    seconds = length.parse_length(req.length) if req.length else None
+    top = float(req.stars)
+    n = len(mapset_targets(top)) if (req.mapset and 0.5 <= top <= 12.0) else 1
+    workdir = Path(tempfile.mkdtemp(prefix="osumapgen_cut_")) if seconds else None
+    try:
+        if req.mapset:
+            _plan_mapset(progress, bool(seconds), n)
+        else:
+            _plan_single(progress, bool(seconds))
+        if seconds:
+            req = _apply_length(req, seconds, progress, workdir)
+        return run_mapset(req, progress, planned=True) if req.mapset else _run_single(req, progress)
+    finally:
+        if workdir is not None:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _versions(req: GenerationRequest, sa: SongAnalysis) -> int:
+    secs = req.map_seconds or (sa.music_end_ms - sa.music_start_ms) / 1000.0
+    return length.detail_level(secs)
+
+
+def _run_single(req: GenerationRequest, progress: Progress) -> GenerationResult:
     t0 = time.time()
     target = float(req.stars)
-    res = GenerationResult(ok=False, message="", requested_stars=target)
+    res = GenerationResult(ok=False, message="", requested_stars=target, length_note=req.cut_note)
     sa, title, artist, creator, audio_name, seed = _prepare(req, res, progress)
+    res.detail_level = _versions(req, sa)
     style_key = resolve_style(req.style, sa, target)
     res.style_used = STYLE_NAMES.get(style_key, style_key)
     version = f"Generated {target:.1f} Stars - {res.style_used}"
@@ -308,7 +394,8 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
     meta = serializer.Metadata(title=title, artist=artist, version=version, creator=creator,
                                tags=f"osumapgen generated {res.style_used.lower()}", background=bg_name)
 
-    cand, history, rep = _build(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance)
+    cand, history, rep = _build(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance,
+                                versions=res.detail_level)
 
     res.estimated_stars = round(cand.stars, 2)
     res.estimated_stars_stable = round(cand.stars_stable, 2)
@@ -364,19 +451,19 @@ def run(req: GenerationRequest, progress: Optional[Progress] = None) -> Generati
     return res
 
 
-def run_mapset(req: GenerationRequest, progress: Optional[Progress] = None) -> GenerationResult:
+def run_mapset(req: GenerationRequest, progress: Optional[Progress] = None, planned: bool = False
+               ) -> GenerationResult:
     """Several difficulties from ONE audio analysis, packaged together in one .osz."""
     progress = progress or Progress()
     t0 = time.time()
     top = float(req.stars)
     targets = mapset_targets(top) if 0.5 <= top <= 12.0 else [top]
     n = len(targets)
-    stages = [("decode", 8), ("features", 14), ("timing", 10), ("structure", 6)]
-    for i in range(n):
-        stages += [(f"generate{i}", 45 / n), (f"validate{i}", 7 / n)]
-    progress.plan(stages + [("package", 10)])
-    res = GenerationResult(ok=False, message="", requested_stars=top, mapset=True)
+    if not planned:
+        _plan_mapset(progress, False, n)
+    res = GenerationResult(ok=False, message="", requested_stars=top, mapset=True, length_note=req.cut_note)
     sa, title, artist, creator, audio_name, seed = _prepare(req, res, progress)
+    res.detail_level = _versions(req, sa)
 
     # ---- every difficulty comes from the same analysis
     built = []
@@ -388,7 +475,7 @@ def run_mapset(req: GenerationRequest, progress: Optional[Progress] = None) -> G
                                    creator=creator, tags=f"osumapgen generated mapset {style_name.lower()}",
                                    background=bg_name)
         cand, history, rep = _build(sa, target, style_key, seed, meta, audio_name, progress, req.tolerance,
-                                    f"generate{i}", f"validate{i}")
+                                    f"generate{i}", f"validate{i}", versions=res.detail_level)
         built.append((target, style_key, meta, cand, history, rep))
 
     # ---- name difficulties by their estimated stars, then re-serialize with the final Version
@@ -512,7 +599,7 @@ def _report_payload(req, target, sa, cand: Candidate, history, rep, meta, style_
     client = packaging.osu_client_name()
     return {
         "generator": f"OsuMapGen {__version__}",
-        "input": str(req.mp3_path),
+        "input": str(req.source_path or req.mp3_path),
         "metadata": {"title": meta.title, "artist": meta.artist, "version": meta.version, "creator": meta.creator,
                      "title_source": "user" if req.title else ("id3" if sa.audio.title else "filename"),
                      "artist_source": "user" if req.artist else ("id3" if sa.audio.artist else
@@ -560,12 +647,18 @@ def _head_lines(payload: dict, res: GenerationResult) -> List[str]:
 
 def _extras(res: GenerationResult) -> dict:
     return {"timing_preview": Path(res.preview_path).name if res.preview_path else None,
-            "background": Path(res.background_path).name if res.background_path else None}
+            "background": Path(res.background_path).name if res.background_path else None,
+            "length": res.length_note or "Full song",
+            "detail_versions_per_section": res.detail_level}
 
 
 def _extra_lines(res: GenerationResult) -> List[str]:
     x = _extras(res)
     return [
+        "Length:              " + x["length"],
+        "Detail:              " + (f"{x['detail_versions_per_section']} versions of every section compared, "
+                                   "the cleanest kept (shorter maps get more)"
+                                   if x["detail_versions_per_section"] > 1 else "1 version per section (long map)"),
         "Timing preview:      " + (f"{x['timing_preview']} (song + a click on every note; not in the .osz)"
                                    if x["timing_preview"] else "not written"),
         "Background:          " + (f"{x['background']} (cover art from the MP3)" if x["background"]
