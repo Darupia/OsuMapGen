@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -18,7 +19,8 @@ REQUIRED_MODULES = [
     ("mutagen", "mutagen"),
 ]
 
-REPAIR_HINT = 'Double-click "Setup or Repair.bat" in the OsuMapGen folder to reinstall them.'
+REPAIR_HINT = ("Download DarupiMapper.exe again to repair it." if getattr(sys, "frozen", False)
+               else 'Double-click "Setup or Repair.bat" in the OsuMapGen folder to reinstall them.')
 
 
 @dataclass

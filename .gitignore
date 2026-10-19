@@ -23,3 +23,7 @@ desktop.ini
 # Generated maps and test packs
 output/
 references/
+
+# PyInstaller
+build/
+dist/
