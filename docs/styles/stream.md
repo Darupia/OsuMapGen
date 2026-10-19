@@ -45,7 +45,7 @@ How to read this honestly:
 
 - No row is all zero. The nearest is buzz sliders: zero in every map of the 4.5-5.5 band, and the 5.5-6.5 median is also zero. Only 4 of the 11 maps have buzz sliders at all (Death 9, Myth 15, ABSOLUTION 5, Legend 4). Note that the 5.5-6.5 p90 shows 9 because Myth's 15 is above the 90th-percentile pick.
 - The bands are thin: 3, 5 and 3 maps. With 3 maps the median and the 90th percentile are the same map, so a p50 = p90 cell means "one of three maps", not "everyone agrees". The 90th percentile also hides the most extreme map: for example the 6.5+ band shows 15 s as the longest fast-tap stretch, but DISHONEST has 44 s, and the 6.5+ longest run is shown as 93 while ABSOLUTION has a 113-note run (per-map values from `metrics.json`).
-- "Stream % of objects" in the 4.5-5.5 band (20.6 to 28.6) is not much higher than the two excluded maps (20.1 and 15.3, see "Reference set"). That band looks like a mixed or jump-and-slider map with bursts, not a pure stream map, so I trust it least.
+- "Stream % of objects" in the 4.5-5.5 band shows 20.6 / 28.6 / 28.6, but that hides one map: with three maps the p90 is the middle one, and Xenon's Extra (5.24 stars) has 52.4%. The three maps are really 20.6% (Linada's Insane), 28.6% (smozit's Insane) and 52.4%. Linada's Insane is as low as the two excluded maps (20.1 and 15.3, see "Reference set"), so that band is a mix of stream-heavy and mixed maps and I trust it least. The same hiding happens in the 5.5-6.5 band: its p90 of 50.3 leaves out Death at 73.8%.
 - The stream run length median goes down in the top band (5) because two of its three maps (ABSOLUTION and Legend) have a median run of 5 notes, many short bursts between jumps; DISHONEST's median run is 25 notes. It does not mean the top-band streams are shorter, see the longest-run row.
 - Spread inside a band is large: in the 5.5-6.5 band stream spacing goes from 0.27 (Death, tightly packed notes) to 0.98 (Speedy Dog) over the five maps; the table shows 0.86 as p90.
 - The time share of each 10-second window type (mean of the timeline letters, from the same JSON): S (stream) 0.29 / 0.38 / 0.48, J (jump) 0.16 / 0.30 / 0.30, L (slider-heavy) 0.10 / 0.16 / 0.09, B (bursts) 0.07 / 0.05 / 0.03, rests (.) 0 / 0.02 / 0.04 for the three bands.
@@ -87,7 +87,7 @@ Your pacing rule is that a player should not spam-tap for longer than about 10-1
 What the human maps do:
 
 - By the strict "tapping stretch" measure, 10 of the 11 maps have at least one stretch longer than 15 seconds. The longest stretch per map goes from 9.9 s (Sky Arrow, the only map under 10 s) to 68.1 s (DISHONEST); medians per band are 24.2 s, 30 s and 37.5 s. So the human maps do break your rule if the rule counts any note. The cause is that their breathers are mostly short: one beat of gap, a 3-slide slider, a kick slider.
-- By the fast-tap measure, the maps keep close to your rule: 9 of 11 maps never have a stream-speed stretch over 10 s. ABSOLUTION has one stretch above 10 s (it reaches 15 s) and DISHONEST has four (the longest reaches 44 s). The other nine stay at 10 s or less; 8 of the 11 are at 8 s or less (Death is the 10 s one). The 6.5+ band is the one that tests stamina: median longest fast-tap stretch 15 s, total fast-tap time 74 / 116 / 116 s per map.
+- By the fast-tap measure, the maps keep close to your rule: 9 of 11 maps never have a stream-speed stretch over 10 s. Only two maps go above 10 s: ABSOLUTION (15 s) and DISHONEST (44 s). The other nine stay at 10 s or less; 8 of the 11 are at 8 s or less (Death is the 10 s one). The 6.5+ band is the one that tests stamina: median longest fast-tap stretch 15 s, total fast-tap time 74 / 116 / 116 s per map.
 - Where they break it hardest: the last part of DISHONEST (about 218-290 s). Its timeline ends `...LSSSSSSSS.`: runs of mostly 21 to 33 notes plus 85- and 93-note runs (and a few 5-17 note bursts at the start) are separated only by a 3-slide slider and a 1-beat gap (about 0.3 s, with a few 2-beat gaps), for about 70 seconds. That matches its 68.1 s tapping stretch and 44 s fast-tap stretch (I did not check which exact stretch the tool picked). It reads as a deliberate stamina finale, not typical pacing for the set.
 
 What they do instead of resting (in the examples I read):
@@ -106,7 +106,7 @@ Measurable targets for a Stream-style map, taken straight from the p10-p90 range
 
 - 4.5-5.5 stars
   - Objects per minute about 263-264 (3 maps; the 5.5-6.5 range starts at 275).
-  - Stream % 20.6-28.6; longest run 9 notes; stream spacing 0.44-0.54 circle widths.
+  - Stream % 20.6-28.6 (Xenon's Extra, one of the 3 maps, is at 52.4, so treat the top as open); longest run 9 notes in the table (Xenon's Extra reaches 13); stream spacing 0.44-0.54 circle widths.
   - Jump distance mean 1.85-1.95, p90 2.54-2.65 circle widths; sharp turns 30-37%.
   - Sliders 27.5-31%; slider repeat 7-12%; no buzz sliders; 3-6 kick sliders per map; stacks 0.6-8.4%.
   - Longest tapping stretch 21.7-24.2 s; longest fast-tap stretch about 2 s.

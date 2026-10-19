@@ -96,8 +96,9 @@ def _fill_streams(sa: SongAnalysis, chosen: List[int], P: SectionParams) -> List
     return sorted(out)
 
 
-def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for) -> List[int]:
-    """Split 1/4 runs longer than the allowed burst length for their section."""
+def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for, ends=None) -> List[int]:
+    """Split 1/4 runs longer than the allowed burst length for their section. Stream presets cut runs on beat
+    boundaries (5, 9, 13... notes, one beat apart) and report where each run ends in `ends`."""
     if not idx:
         return idx
     ticks = sa.ticks
@@ -123,6 +124,9 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for) -> 
             cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 3.2) / 0.8, 0, 1)))
         cap = max(2, min(cap, p.max_burst))
         base_cap, rng = cap, rng_for(10_000 + s.index)
+        if p.stream_fill and len(run) >= 5:
+            _aligned_chunks(run, ticks, cap, L, rng, out, ends)
+            return
         cap = _vary_cap(base_cap, p.max_burst, len(run), L, rng)
         k = 0
         count = 0
@@ -153,14 +157,29 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for) -> 
 
 
 _BURST_LENGTHS = (3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32)
+_STREAM_LENGTHS = (5, 9, 13, 17, 21, 25, 29, 33)      # whole beats of 1/4 notes plus the starting note
 
 
-def _vary_cap(cap: int, max_burst: int, run_len: int, L: float, rng) -> int:
+def _aligned_chunks(run: List[int], ticks, cap: int, L: float, rng, out: List[int], ends) -> None:
+    """Cut one run of adjacent ticks into streams that start and end on a beat, with a one-beat gap between them."""
+    n, k = len(run), 0
+    while k < n:
+        target = _vary_cap(cap, 10 ** 6, n - k, L, rng, _STREAM_LENGTHS)
+        snap = ticks[run[k]].snap
+        cand = [e for e in range(k + 2, min(n, k + target + snap)) if ticks[run[e]].sub == 0]
+        e = min(cand, key=lambda x: abs((x - k + 1) - target)) if cand else n - 1
+        out.extend(run[k:e + 1])
+        if ends is not None and e - k + 1 >= 4:
+            ends.add(run[e])
+        k = e + snap
+
+
+def _vary_cap(cap: int, max_burst: int, run_len: int, L: float, rng, lengths=_BURST_LENGTHS) -> int:
     """Pick this run's length from a spread of lengths up to the section's limit, so streams
     are not all the same size. Short runs and low levels are left alone."""
     if L < 2.0 or cap < 6 or run_len <= 3:
         return cap
-    choices = [n for n in _BURST_LENGTHS if 3 <= n <= cap]
+    choices = [n for n in lengths if 3 <= n <= cap]
     if not choices:
         return cap
     w = np.array([1.0 + 0.35 * i for i in range(len(choices))])    # favour the longer end a little
@@ -174,10 +193,39 @@ def _beat_ms(sa: SongAnalysis, g: GridTick) -> float:
     return sa.timing[g.timing_index].beat_ms
 
 
+def _dotted(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for) -> List[int]:
+    """Technical presets: stretch some half-beat gaps to a dotted 3/4 beat, only where the audio has an onset
+    on the later tick (so the note still lands on a real sound)."""
+    ticks = sa.ticks
+    out = list(idx)
+    chosen = set(out)
+    rng, rng_section = None, None
+    for j in range(len(out) - 1):
+        a, b = out[j], out[j + 1]
+        ga, gb = ticks[a], ticks[b]
+        s = sa.sections[ga.section_index]
+        p = P.of(s.index)
+        if not p.dotted_rate or s.is_break or b - a != 2 or ga.snap != 4 or gb.timing_index != ga.timing_index:
+            continue
+        if s.index != rng_section:
+            rng, rng_section = rng_for(30_000 + s.index), s.index
+        cand = a + 3
+        nxt = out[j + 2] if j + 2 < len(out) else 10 ** 9
+        if cand >= nxt or cand in chosen or cand >= len(ticks) or ticks[cand].timing_index != ga.timing_index:
+            continue
+        if ticks[cand].onset < max(0.2, 0.7 * gb.onset) or rng.random() >= p.dotted_rate:
+            continue
+        chosen.discard(b)
+        chosen.add(cand)
+        out[j + 1] = cand
+    return out
+
+
 def plan_rhythm(sa: SongAnalysis, P: SectionParams, sm: float, rng_for) -> List[RhythmEvent]:
     """rng_for(section_index) -> np.random.Generator (deterministic per section)."""
     ticks = sa.ticks
-    idx = _cap_bursts(sa, select_ticks(sa, P), P, rng_for)
+    ends: set = set()
+    idx = _cap_bursts(sa, _dotted(sa, select_ticks(sa, P), P, rng_for), P, rng_for, ends)
     if not idx:
         return []
     events: List[RhythmEvent] = []
@@ -211,6 +259,7 @@ def plan_rhythm(sa: SongAnalysis, P: SectionParams, sm: float, rng_for) -> List[
             _maybe_slider(sa, ev, g, nxt, L, p, sm, rng, tick_times)
         events.append(ev)
 
+    _end_sliders(sa, events, P, rng_for, ends)
     events = enforce_pacing(sa, events, P, sm, rng_for)
     _final_spinner(sa, events, P.base)
     _combos_and_hitsounds(sa, events, P)
@@ -262,7 +311,12 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     if rng.random() >= chance:
         return
     repeats = 1
-    if best_len >= 1.0 and L < 2.8 and rng.random() < p.slider_repeat:
+    kick_ticks = int(round(best_len * g.snap)) // 2
+    if p.kick_chance and kick_ticks >= 1 and rng.random() < p.kick_chance:
+        kick_ticks = min(kick_ticks, max(1, g.snap // 2))          # each slide at most half a beat
+        best_len = kick_ticks / g.snap
+        repeats = 2
+    elif best_len >= 1.0 and L < 2.8 and rng.random() < p.slider_repeat:
         half = ticks[min(len(ticks) - 1, ev.tick_index + int(round(best_len / 2 * g.snap)))]
         if half.onset > 0.3:
             best_len /= 2
@@ -270,6 +324,44 @@ def _maybe_slider(sa, ev: RhythmEvent, g: GridTick, nxt: int, L: float, p: MapPa
     ev.kind = "slider"
     ev.repeats = repeats
     ev.end_tick_index = ev.tick_index + int(round(best_len * g.snap))
+
+
+def _end_sliders(sa: SongAnalysis, events: List[RhythmEvent], P: SectionParams, rng_for, ends: set) -> None:
+    """Human stream maps usually finish a run with one small slider (a kick, a 3-slide or a short plain slider)
+    that lands where the next group begins. Turn the last note of some runs into one."""
+    ticks = sa.ticks
+    rng, rng_section = None, None
+    for i, ev in enumerate(events):
+        if ev.tick_index not in ends or ev.kind != "circle":
+            continue
+        g = ticks[ev.tick_index]
+        s = sa.sections[g.section_index]
+        p = P.of(s.index)
+        if not p.run_slider_end:
+            continue
+        if s.index != rng_section:
+            rng, rng_section = rng_for(40_000 + s.index), s.index
+        if rng.random() >= p.run_slider_end:
+            continue
+        nxt = events[i + 1] if i + 1 < len(events) else None
+        room = 8
+        if nxt is not None:
+            if ticks[nxt.tick_index].timing_index != g.timing_index:
+                continue
+            room = nxt.tick_index - ev.tick_index
+        # (ticks per slide, slides): kick, 3-slide, short plain; each must leave one tick of air before the next note
+        variants = [v for v in ((1, 2), (1, 3), (2, 1)) if v[0] * v[1] + 1 <= room]
+        if not variants:
+            continue
+        seg, repeats = variants[int(rng.choice(len(variants), p=np.array([0.4, 0.3, 0.3][:len(variants)]) /
+                                                 sum([0.4, 0.3, 0.3][:len(variants)])))]
+        last = ev.tick_index + seg * repeats
+        if last >= len(ticks) or ticks[last].timing_index != g.timing_index or ticks[last].time_ms > sa.music_end_ms:
+            continue
+        ev.kind = "slider"
+        ev.end_tick_index = ev.tick_index + seg
+        ev.repeats = repeats
+        ev.stream = False
 
 
 def _event_end_ms(sa: SongAnalysis, ev: RhythmEvent) -> float:

@@ -79,6 +79,11 @@ class MapParams:
     slider_repeat: float = 0.18   # chance of a repeat slider on a long gap
     stream_fill: bool = False     # bridge small holes so 1/4 runs become long streams
     max_tap_s: float = 12.0       # longest stretch of tapping before a slider/buzz-slider breather (s)
+    stack_rate: float = 0.05      # chance a half-beat-or-closer note sits on the previous note (a stack)
+    stream_step: float = 0.0      # chance a long stream steps its spacing up as it builds
+    run_slider_end: float = 0.0   # chance a stream run ends on a short slider (kick / 3-slide / short)
+    dotted_rate: float = 0.0      # chance a half-beat gap is stretched to a dotted 3/4 beat when the audio has the onset
+    kick_chance: float = 0.0      # chance a slider becomes a kick slider (one reverse, short slides)
     buzz_chance: float = 0.3      # share of breathers that are buzz sliders
 
     def level(self, intensity: float) -> float:
@@ -112,12 +117,14 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_rate = min(0.9, p.slider_rate + 0.15)
         p.quarter_bias = -0.4
         p.max_tap_s = 14.0
+        p.stack_rate = 0.02
     elif style == "stream":
         # long, varied 1/4 streams with slider "kicks" between them
-        p.level_hi += 0.6
+        p.level_hi += 0.4
         p.quarter_bias = 0.6
         p.stream_fill = True
-        p.spacing *= 0.8
+        p.spacing *= 1.1                   # wider hops between runs: difficulty comes from distance, not note count
+        p.jump_boost += 0.3
         p.max_burst = max(p.max_burst, int(14 + 20 * k))
         p.stream_spacing *= 1.5
         p.slider_rate = 0.5
@@ -125,7 +132,11 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.slider_min_gap = 0.74
         p.angle_sharpness *= 0.6
         p.max_tap_s = 10.0
-        p.buzz_chance = 0.4
+        p.buzz_chance = 0.25
+        p.stack_rate = 0.08
+        p.stream_step = 0.5
+        p.run_slider_end = 0.6
+        p.kick_chance = 0.15
     elif style == "jump":
         # sparse rhythm, wide spacing, many sliders; difficulty comes from distance
         p.level_hi = min(p.level_hi, 2.0)
@@ -136,12 +147,13 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.max_burst = 2
         p.angle_sharpness = min(1.0, p.angle_sharpness + 0.3)
         p.slider_rate = 0.8
-        p.slider_force = 0.45
-        p.slider_min_gap = 0.74
-        p.slider_repeat = 0.3
+        p.slider_force = 0.55
+        p.slider_min_gap = 0.49
+        p.slider_repeat = 0.12
         p.max_distance = min(470.0, p.max_distance + 60)
         p.max_tap_s = 12.0
-        p.buzz_chance = 0.25
+        p.buzz_chance = 0.0                # human jump maps almost never use buzz sliders: rest comes from gaps and long sliders
+        p.stack_rate = 0.06
     elif style == "tech":
         # odd angles, short and repeat sliders, small bursts
         p.angle_sharpness = min(1.0, p.angle_sharpness + 0.25)
@@ -152,7 +164,12 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.quarter_bias = 0.1
         p.max_burst = min(p.max_burst, 4)
         p.max_tap_s = 11.0
-        p.buzz_chance = 0.5
+        p.buzz_chance = 0.25
+        p.stack_rate = 0.14
+        p.kick_chance = 0.35
+        p.dotted_rate = 0.5
+        p.run_slider_end = 0.7
+        p.stream_step = 0.2
     elif style == "slider":
         p.slider_rate = 0.95
         p.slider_force = 0.8
@@ -162,6 +179,7 @@ def make_params(stars: float, knob: float, style: str) -> MapParams:
         p.max_burst = min(p.max_burst, 3)
         p.quarter_bias = -0.3
         p.max_tap_s = 15.0
+        p.stack_rate = 0.03
     return p
 
 
