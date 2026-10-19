@@ -34,6 +34,29 @@ FFmpeg is optional: it is used when present, otherwise the built-in decoder read
 If something breaks, double-click **`Setup or Repair.bat`**. It rebuilds the private environment in
 `%LOCALAPPDATA%\OsuMapGen\venv` and changes nothing else on your system.
 
+## DarupiMapper.exe (single-file app)
+
+`DarupiMapper.exe` is the same generator packaged as one Windows program: no Python, no setup, no packages to
+download. Double-click it to open the window; it also accepts the command-line options below
+(`DarupiMapper.exe song.mp3 4.5 --style "Jump-focused"`).
+
+* **Where to get it:** every push to GitHub builds it on a Windows machine, runs the tests, opens the window once as
+  a self-test and generates a real map from audio before accepting the build. Open the repository's **Actions** tab,
+  pick the latest "Build DarupiMapper.exe" run and download the `DarupiMapper-windows` artifact (a zip holding the exe).
+* **Build it yourself:** double-click **`Build DarupiMapper.bat`** (needs the environment from `Setup or Repair.bat`).
+  The result is `dist\DarupiMapper.exe`. PyInstaller is used only to build; it is not a runtime requirement.
+* **Expect:** about 110 MB, a few seconds of start-up while it unpacks, and a Windows SmartScreen / antivirus prompt
+  because the file is not code-signed ("More info" > "Run anyway"). Settings and logs go to the same folders as the
+  Python version.
+
+## Mapping styles and how they were tuned
+
+The styles (Stream-focused, Jump-focused, Technical, Balanced mix, ...) are tuned against measurements of real
+human maps. [`docs/styles/Instruction.md`](docs/styles/Instruction.md) is the entry point: it explains each style
+with measured ranges and pictures, and [`docs/styles/Generator_status.md`](docs/styles/Generator_status.md) shows how
+closely the generator matches them today. The measuring tools live in `tools/` (`analyze_maps.py`,
+`style_profiles.py`, `compare_generated.py`, `pattern_svg.py`).
+
 ## What you get
 
 Each run creates a new folder in `Documents\OsuMapGen Output\` (names never collide):
