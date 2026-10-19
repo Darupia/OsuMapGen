@@ -114,12 +114,10 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for, end
         L = p.level(s.intensity)
         if L < (2.0 if p.stream_fill else 2.6):
             cap = 3
-        elif L < 3.2 and not p.stream_fill:
-            cap = 5
-        elif L < 3.2:
-            cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 2.6) / 0.6, 0.0, 1.0) * 0.6)) if L >= 2.6 else 6
         elif p.stream_fill:
-            cap = p.max_burst
+            cap = p.max_burst              # stream presets keep every run the audio supports, whatever the level
+        elif L < 3.2:
+            cap = 5
         else:
             cap = int(round(5 + (p.max_burst - 5) * np.clip((L - 3.2) / 0.8, 0, 1)))
         cap = max(2, min(cap, p.max_burst))
@@ -157,7 +155,7 @@ def _cap_bursts(sa: SongAnalysis, idx: List[int], P: SectionParams, rng_for, end
 
 
 _BURST_LENGTHS = (3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32)
-_STREAM_LENGTHS = (5, 9, 13, 17, 21, 25, 29, 33)      # whole beats of 1/4 notes plus the starting note
+_STREAM_LENGTHS = (5, 9, 13, 17, 21, 25, 29, 33, 41)      # whole beats of 1/4 notes plus the starting note
 
 
 def _aligned_chunks(run: List[int], ticks, cap: int, L: float, rng, out: List[int], ends) -> None:
@@ -353,8 +351,8 @@ def _end_sliders(sa: SongAnalysis, events: List[RhythmEvent], P: SectionParams, 
         variants = [v for v in ((1, 2), (1, 3), (2, 1)) if v[0] * v[1] + 1 <= room]
         if not variants:
             continue
-        seg, repeats = variants[int(rng.choice(len(variants), p=np.array([0.4, 0.3, 0.3][:len(variants)]) /
-                                                 sum([0.4, 0.3, 0.3][:len(variants)])))]
+        seg, repeats = variants[int(rng.choice(len(variants), p=np.array([0.2, 0.3, 0.5][:len(variants)]) /
+                                                 sum([0.2, 0.3, 0.5][:len(variants)])))]
         last = ev.tick_index + seg * repeats
         if last >= len(ticks) or ticks[last].timing_index != g.timing_index or ticks[last].time_ms > sa.music_end_ms:
             continue
@@ -375,14 +373,15 @@ def _event_end_ms(sa: SongAnalysis, ev: RhythmEvent) -> float:
     return ev.time_ms
 
 
-def _make_breather(sa: SongAnalysis, ev: RhythmEvent, p: MapParams, sm: float, rng) -> bool:
+def _make_breather(sa: SongAnalysis, ev: RhythmEvent, p: MapParams, sm: float, rng, after_fast: bool = False) -> bool:
     """Turn `ev` into a held slider (long, with slides) or a buzz slider (1/4-beat slides repeated).
     Returns False when the timing/grid does not allow it."""
     ticks = sa.ticks
     g = ticks[ev.tick_index]
     beat = _beat_ms(sa, g)
     snap = g.snap
-    target = float(rng.choice([1.5, 2.0, 2.0, 3.0]))              # beats of rest for the hands
+    # beats of rest for the hands; after stream-speed tapping they get a longer one (about a second or more)
+    target = float(rng.choice([3.0, 4.0, 4.0, 6.0] if after_fast else [1.5, 2.0, 2.0, 3.0]))
     if rng.random() < p.buzz_chance:
         seg, repeats = 1, int(np.clip(round(target * snap * 0.75), 4, 16))      # 1 tick per slide
     else:
@@ -412,6 +411,8 @@ def enforce_pacing(sa: SongAnalysis, events: List[RhythmEvent], P: SectionParams
     start = prev_end = None
     prev_hold = False
     limit = 12000.0
+    recent: List[float] = []          # press times in the last second, for stream-speed tapping
+    fast_start, fast_limit = None, 10000.0
     rng, rng_section = None, None
     pending: List[RhythmEvent] = list(events)
     i = 0
@@ -432,19 +433,32 @@ def enforce_pacing(sa: SongAnalysis, events: List[RhythmEvent], P: SectionParams
         if start is None or prev_hold or t - prev_end >= 1.5 * beat:
             start = t
             limit = p.max_tap_s * 1000.0 * float(rng.uniform(0.7, 1.0))
-        elapsed = t - start
+        recent.append(t)
+        while recent and recent[0] <= t - 1000.0:
+            recent.pop(0)
+        if len(recent) >= 8:
+            if fast_start is None:
+                fast_start = t
+                fast_limit = p.max_fast_tap_s * 1000.0 * float(rng.uniform(0.7, 1.0))
+        else:
+            fast_start = None
+        # how far into its allowance the current stretch is (1.0 = at the limit), for either kind of tapping
+        used = max((t - start) / limit, ((t - fast_start) / fast_limit) if fast_start is not None else 0.0)
+        elapsed = used * limit
         nice = g.sub == 0 and g.beat_index % 4 == 0 and not ev.stream          # start of a bar, outside a stream
         ok = g.sub == 0 and not ev.stream
         convertible = ev.kind == "circle" or (ev.kind == "slider" and _event_end_ms(sa, ev) - t < 0.97 * beat)
         if convertible and not s.is_break and (
                 (elapsed > 0.8 * limit and nice) or (elapsed > limit and ok) or elapsed > 1.3 * limit):
-            if _make_breather(sa, ev, p, sm, rng):
+            if _make_breather(sa, ev, p, sm, rng, after_fast=fast_start is not None):
                 end_ms = _event_end_ms(sa, ev)
                 rest_until = end_ms + beat / g.snap                  # a quarter tick of air after the release
                 while i < len(pending) and pending[i].time_ms < rest_until:
                     i += 1
                 out.append(ev)
                 start, prev_end, prev_hold = None, end_ms, True
+                recent.clear()
+                fast_start = None
                 continue
         out.append(ev)
         prev_end = _event_end_ms(sa, ev)

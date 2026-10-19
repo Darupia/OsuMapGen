@@ -79,3 +79,36 @@ def test_tapping_stretches_are_capped(analysed):
     for style in ("stream", "jump", "tech", "mix"):
         m = generator.generate(sa, 6.0, style, 1.0, 1)
         assert _longest_tap_stretch_s(sa, m) <= 15.0, style
+
+
+def _stack_count(sa, m):
+    beat = sa.timing[0].beat_ms
+    n = 0
+    for a, b in zip(m.objects, m.objects[1:]):
+        if a.kind != "spinner" and b.kind != "spinner" and b.time_ms - a.time_ms <= 0.55 * beat \
+                and (a.end_x, a.end_y) == (b.x, b.y):
+            n += 1
+    return n
+
+
+def test_stacks_appear_in_styles_that_use_them(analysed):
+    sa, _ = analysed("full")
+    for style in ("tech", "jump", "mix"):
+        m = generator.generate(sa, 6.0, style, 1.0, 1)
+        assert _stack_count(sa, m) > 0, style
+
+
+def test_stream_runs_are_whole_beats(analysed):
+    """Stream presets cut runs on beat boundaries: most runs are 4n+1 notes (5, 9, 13...)."""
+    sa, _ = analysed("full")
+    runs = _run_lengths(sa, "stream", 1.0)
+    assert runs
+    whole = sum(1 for r in runs if r % 4 == 1)
+    assert whole >= 0.5 * len(runs), sorted(runs)
+
+
+def test_jump_style_has_no_buzz_sliders(analysed):
+    sa, _ = analysed("full")
+    m = generator.generate(sa, 6.0, "jump", 1.0, 1)
+    buzz = [o for o in m.objects if o.kind == "slider" and o.slides >= 4 and o.length < 90]
+    assert not buzz

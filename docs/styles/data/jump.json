@@ -6,7 +6,7 @@
   "Shii's Extra",
   "Ipas' Insane"
  ],
- "note": "Produced by tools/style_profiles.py on references/_analysis/metrics.json (group jump, stars >= 4.5, three verified mislabeled maps excluded). Percentiles are the tool's own: in a band with very few maps the p10, p50 and p90 collapse to nearly the same value, so thin bands are anecdote, not a range. Most reference maps are cut versions of 0.5 to 3.3 minutes, which caps the tapping-stretch numbers.",
+ "note": "Produced by tools/style_profiles.py on references/_analysis/metrics.json (group jump, stars >= 4.5, three verified mislabeled maps excluded). Percentiles are the tool's own: the 6.5+ band holds a single map, so its p10, p50 and p90 are all that map's value; treat it as anecdote, not a range. Most reference maps are cut versions of 0.5 to 2.2 minutes, which caps the tapping-stretch numbers.",
  "group": "jump",
  "n_maps": 47,
  "mapsets": 8,

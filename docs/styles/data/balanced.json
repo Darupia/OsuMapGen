@@ -5,12 +5,11 @@
   "The Eclipse].osu",
   "Tortured Soul Extra].osu",
   "Reform's Extra].osu",
-  "Climax].osu",
   "Envision].osu"
  ],
- "note": "Balanced = maps that mix streams, jumps and sliders and follow the music section by section. Generator styles documented: 'mix' (per-section presets) and 'balanced' (single preset). Numbers are p10/p50/p90 per star band from tools/style_profiles.py (group balanced, 4.5 stars and up, 5 maps excluded as mislabeled by the audit). Weak evidence: the 4.5-5.5 band has 6 maps from 5 mapsets; the 5.5-6.5 band has 10 maps from 7 mapsets but Kakushigoto [Insane] and [Insane AR10] are the same notes with a different AR (counted twice); the 6.5+ band is 2 files of one map (Kakushigoto [CRN] and [CRN-AR10-], same notes, different AR), so its p10/p50/p90 are a single map, not a range.",
+ "note": "Balanced = maps that mix streams, jumps and sliders and follow the music section by section (calm verses, intense choruses). Generator styles documented: 'mix' (per-section presets) and 'balanced' (single preset). Numbers are p10/p50/p90 per star band from tools/style_profiles.py (group balanced, 4.5 stars and up, 4 maps excluded as mislabeled by the audit). Weak evidence: the 4.5-5.5 band has 6 maps from 5 mapsets; the 5.5-6.5 band has 10 maps from 7 mapsets, but Kakushigoto [Insane] and [Insane AR10] are the same notes with a different AR (counted twice); the 6.5+ band has 3 files from 2 mapsets (Kakushigoto [CRN] and [CRN-AR10-] are the same notes with a different AR, plus Mousou Kajitsu [Climax]), so its p10/p50/p90 describe two distinct maps, not a distribution.",
  "group": "balanced",
- "n_maps": 18,
+ "n_maps": 19,
  "mapsets": 7,
  "bands": {
   "4.5-5.5": {
@@ -380,11 +379,11 @@
    }
   },
   "6.5+": {
-   "n": 2,
-   "mapsets": 1,
+   "n": 3,
+   "mapsets": 2,
    "stars": [
     6.58,
-    6.58
+    6.75
    ],
    "metrics": {
     "objects_per_min": {
@@ -393,12 +392,12 @@
      "p90": 287
     },
     "peak_objects_per_10s": {
-     "p10": 80,
+     "p10": 74,
      "p50": 80,
      "p90": 80
     },
     "stream_pct": {
-     "p10": 28.0,
+     "p10": 24.3,
      "p50": 28.0,
      "p90": 28.0
     },
@@ -413,7 +412,7 @@
      "p90": 17
     },
     "run_max": {
-     "p10": 18,
+     "p10": 17,
      "p50": 18,
      "p90": 18
     },
@@ -428,7 +427,7 @@
      "p90": 15.6
     },
     "burst_runs_3_7": {
-     "p10": 25,
+     "p10": 21,
      "p50": 25,
      "p90": 25
     },
@@ -443,7 +442,7 @@
      "p90": 3.79
     },
     "jump_cv": {
-     "p10": 0.47,
+     "p10": 0.27,
      "p50": 0.47,
      "p90": 0.47
     },
@@ -458,12 +457,12 @@
      "p90": 31.1
     },
     "straight_pct": {
-     "p10": 28.8,
+     "p10": 19.4,
      "p50": 28.8,
      "p90": 28.8
     },
     "slider_pct": {
-     "p10": 35.1,
+     "p10": 25.8,
      "p50": 35.1,
      "p90": 35.1
     },
@@ -493,17 +492,17 @@
      "p90": 0
     },
     "stack_pct": {
-     "p10": 14.2,
+     "p10": 2.4,
      "p50": 14.2,
      "p90": 14.2
     },
     "odd_rhythm_pct": {
-     "p10": 4.2,
+     "p10": 0.0,
      "p50": 4.2,
      "p90": 4.2
     },
     "spinners": {
-     "p10": 4,
+     "p10": 2,
      "p50": 4,
      "p90": 4
     },
@@ -518,24 +517,24 @@
      "p90": 3
     },
     "longest_fast_tap_s": {
-     "p10": 4,
+     "p10": 2,
      "p50": 4,
      "p90": 4
     },
     "fast_tap_total_s": {
-     "p10": 33,
+     "p10": 17,
      "p50": 33,
      "p90": 33
     },
     "rep8_pct": {
-     "p10": 5.6,
+     "p10": 2.0,
      "p50": 5.6,
      "p90": 5.6
     },
     "ar": {
      "p10": 9.0,
-     "p50": 9.0,
-     "p90": 9.0
+     "p50": 9.5,
+     "p90": 9.5
     },
     "od": {
      "p10": 8.0,
@@ -554,12 +553,12 @@
     }
    },
    "timeline_share_mean": {
-    "J": 0.48,
-    "L": 0.22,
-    ".": 0.04,
+    "J": 0.61,
+    "L": 0.15,
+    ".": 0.03,
     "S": 0.13,
-    "B": 0.09,
-    "m": 0.04
+    "B": 0.06,
+    "m": 0.03
    }
   }
  }

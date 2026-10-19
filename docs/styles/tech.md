@@ -6,7 +6,7 @@ This page is based on 21 human-made osu!standard difficulties of 4.5 stars and a
 
 ## What it feels like
 
-You are rarely doing the same thing for more than a second or two. The most common burst I counted is a slider, then four circles on quarter-beat spacing, then a final slider (183 of the 494 bursts and streams in the 21 maps); the rest of a phrase is a mix of half-beat circles, stacks, kick sliders and short sliders. The sliders are short (median 98% of sliders are under one beat per slide in all three bands; the median slide is 0.25 beat at 5.5 stars and above and 0.5 beat at 4.5-5.5), so you almost never sit on a long slider. On average you hit 4 to 4.6 objects per second (median 240 to 277 objects per minute), and about half of them are sliders.
+You are rarely doing the same thing for more than a second or two. The most common burst I counted is four circles on quarter-beat spacing followed by a slider (183 of the 494 bursts and streams in the 21 maps; 161 of them also have a slider right before the burst); the rest of a phrase is a mix of half-beat circles, stacks, kick sliders and short sliders. The sliders are short (median 98% of sliders are under one beat per slide in all three bands; the median slide is 0.25 beat at 5.5 stars and above and 0.5 beat at 4.5-5.5), so you almost never sit on a long slider. On average you hit 4 to 4.6 objects per second (median 240 to 277 objects per minute), and about half of them are sliders.
 
 Playing it is about recognising each little shape in time. In the examples I read, the same rhythm almost never repeats twice in a row (the share of repeated 8-note windows is 0.0 to 5.5%, p10 to p90, in the two bands that have enough maps), so you cannot settle into a pattern the way you can in a stream map.
 
@@ -14,7 +14,7 @@ What makes it hard, in the order I would rank it (my reading of the numbers and 
 
 - **Rhythm and slider reading.** Half of the objects are sliders (median 56%, 50% and 43% at 4.5-5.5, 5.5-6.5 and 6.5+ stars), with a median of 14.5%, 4.9% and 7.0% of them repeating (kick sliders and buzz sliders). Across the 21 maps there are 421 kick sliders and 128 buzz sliders, and 20 of the 21 maps contain kick sliders, 17 contain buzz sliders.
 - **Spacing that keeps changing.** The spread of jump distance (coefficient of variation, the tool's `jump_cv`) has a median of 0.62, 0.44 and 0.52 in the three bands. The Jump page reports 0.34 for jump maps, so tech spacing is less constant. Stacks (0 distance) sit next to hops of 2 to 5 circle widths in the same phrase.
-- **Direction that is not predictable.** Turns are spread out: the sharp-turn share (120 degrees or more) is only 25 to 42% and the straight-on share (30 degrees or less) is 11 to 25% (medians 33/38/40% sharp and 25/23/20% straight). That is a mix of flow and snaps, not the 78 to 85% sharp turns reported for Jump maps.
+- **Direction that is not predictable.** Turns are spread out: the sharp-turn share (120 degrees or more) is only 25 to 42% and the straight-on share (30 degrees or less) is 11 to 25% (medians 33/38/40% sharp and 25/23/20% straight). That is a mix of flow and snaps, not the 78 to 83% sharp turns reported for Jump maps.
 - **Speed is the smaller part.** Objects per minute are 240, 277 and 271 (medians), AR is 9.0 to 9.7 (median), and the longest fast-tap stretch (8 or more key presses per second) is 1, 4 and 3 seconds (medians).
 
 Tech spans two flavours in this reference set, and the data shows both: stream-leaning tech (PRIIDS' Gonna Miss You has 36.0% of objects in streams and 21.6% sliders; Hemophilia has 31.5% streams) and slider-leaning tech (Nagabi's Heart Taken By Lolicops has 72.5% sliders and 3.8% streams; Minorsonek's Extreme has 69.6% sliders and 3.8% streams). Both are labeled tech because of the rhythm and slider vocabulary, not the stream share.
@@ -87,7 +87,7 @@ Measured as time without a rest, the human maps do break the rule, and the tool'
 What the maps do instead:
 
 - **Long sliders as breathers.** Counting sliders held for 0.97 beat or more with a short script on the tool's parser, the median map has 33 of them (range 16 to 87) and about 12 rest gaps of 1.45 beats or more, together about 12 seconds of rest per minute of map. Home Run follows its stream and four buzz sliders with a 15-beat slider (about 5 seconds at its 175 BPM). Insane and Death Rave (KillerBeast) each have a slider of about 23 beats.
-- **Breaks.** Windows of 10 s with fewer than 3 objects are 1%, 3% and 4% of windows. The longest gap I found is 80 beats (Hemophobia), and 17 of the 21 maps have a gap of 20 to 40 beats somewhere (probably the intro or a mid-song break; I did not check which).
+- **Breaks.** Windows of 10 s with fewer than 3 objects are 1%, 3% and 4% of windows. The longest gap I found is 80 beats (Hemophobia), and 16 of the 21 maps have a gap of 20 to 40 beats somewhere (17 counting Extra at 19.9995 beats) (probably the intro or a mid-song break; I did not check which).
 - **Slider chains instead of streams.** The slider-heavy sections (47 to 66% of windows) are where the player is still moving at about 4 to 4.6 objects per second on average (median 240 to 277 per minute) but is not spam-tapping fast.
 - **Short bursts.** Runs of 4 to 9 objects are 413 of the 494 runs (84%; median run 5), so fast tapping mostly arrives in pieces of about a second.
 
@@ -171,6 +171,7 @@ Weak spots in the evidence:
 
 ## See also
 
+- [Style instruction overview](../styles/Instruction.md)
 - [Jump](jump.md)
 - [Stream](stream.md)
 - [Balanced](balanced.md)
