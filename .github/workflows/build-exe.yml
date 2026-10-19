@@ -1,0 +1,61 @@
+name: Build DarupiMapper.exe
+
+on:
+  push:
+    paths:
+      - "osumapgen/**"
+      - "darupimapper.py"
+      - "DarupiMapper.spec"
+      - "requirements.txt"
+      - ".github/workflows/build-exe.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"        # the version requirements.txt was verified on
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.22.3      # build tool only, not a runtime dependency
+
+      - name: Run tests
+        run: python -m pytest tests -q --ignore=tests/test_gui.py
+
+      - name: Build DarupiMapper.exe
+        run: pyinstaller --noconfirm DarupiMapper.spec
+
+      - name: Smoke test the exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = (Resolve-Path "dist\DarupiMapper.exe").Path
+          "{0:N0} MB" -f ((Get-Item $exe).Length / 1MB)
+
+          # 1. the windowed exe can open a window and load every dependency
+          $p = Start-Process $exe -ArgumentList "--selftest", "selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw "self-test failed" }
+
+          # 2. it can make and validate a real map from audio
+          $env:PYTHONPATH = (Get-Location).Path
+          python -c "import sys; sys.path.insert(0, 'tests'); from pathlib import Path; from synth import ensure_fixture; ensure_fixture('short', Path('smoke_in'))"
+          $p = Start-Process $exe -ArgumentList "smoke_in\short.mp3", "3.0", "--out", "smoke_out" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "generation failed with exit code $($p.ExitCode)" }
+          $osz = Get-ChildItem smoke_out -Recurse -Filter *.osz
+          if (-not $osz) { throw "no .osz was produced" }
+          $osz | ForEach-Object { "produced: $($_.Name) ($($_.Length) bytes)" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DarupiMapper-windows
+          path: dist/DarupiMapper.exe
+          if-no-files-found: error

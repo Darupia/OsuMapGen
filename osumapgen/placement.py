@@ -129,6 +129,8 @@ class Placer:
         spacing *= 1.0 + (p.jump_boost - 1.0) * ev.emphasis
         ds = self.diff.slider_multiplier * 100.0 * min(gap_ms / beat_ms, 2.0)
         d = max(spacing, 0.85 * ds)
+        if prev_stream and not ev.stream and gap_ms >= 0.45 * beat_ms:
+            d *= 1.35                       # human maps hop 1.5-5 circle widths out of a stream
         # consecutive notes a 1/2 beat or more apart never overlap; 1/4 doubles may sit close
         floor = 2.1 * self.r if gap_ms >= beat_ms * 0.45 else 0.9 * self.r
         return float(np.clip(d, floor, max(floor, p.max_distance)))
@@ -244,7 +246,14 @@ class Placer:
     def _plan_stream(self, x0, y0, heading, n, spacing, t) -> List[Tuple[float, float, float]]:
         """Positions for the n notes after (x0, y0): a constant-curvature arc or an S-curve
         that stays inside the playfield and away from objects still on screen."""
-        total = n * spacing
+        steps = [spacing] * n
+        if n >= 9 and self.rng.random() < self.p.stream_step:
+            # the stream builds: spacing steps up every few notes, as in human spaced streams
+            mult, width = 1.0, int(self.rng.choice([4, 5, 8]))
+            for i in range(n):
+                if i and i % width == 0:
+                    mult = min(1.7, mult * float(self.rng.uniform(1.1, 1.22)))
+                steps[i] = spacing * mult
         sign = 1.0 if self.rng.random() < 0.5 else -1.0
         s_curve = n >= 6 and self.rng.random() < 0.4
         # keep the total turn below ~260 degrees so long streams do not loop over themselves
@@ -263,8 +272,8 @@ class Placer:
                         if s_curve and i == n // 2:
                             k = -k
                         h += k
-                        x += spacing * math.cos(h)
-                        y += spacing * math.sin(h)
+                        x += steps[i] * math.cos(h)
+                        y += steps[i] * math.sin(h)
                         pts.append((x, y, h))
                     if not all(_inside(px, py) for px, py, _ in pts):
                         continue
@@ -287,9 +296,20 @@ class Placer:
             pts.append((x, y, h))
         return pts
 
+    def _stacks_here(self, ev: RhythmEvent, gap_ms: float, beat_ms: float, prev_stream: bool) -> bool:
+        """Human maps double- and triple-tap on one spot (pairs at half-beat spacing, triples at 1/4). Only close
+        notes, never inside a stream, and at most three in a row."""
+        if ev.stream or prev_stream or not self.objects or self.stack_run >= 2:
+            return False
+        if gap_ms > 0.55 * beat_ms or self.p.stack_rate <= 0:
+            return False
+        rate = self.p.stack_rate * (1.0 if self.stack_run == 0 else 2.5)     # a stack tends to continue to a triple
+        return bool(self.rng.random() < rate)
+
     # ---------------------------------------------------------------- main
     def place(self, events: List[RhythmEvent]) -> List[HitObject]:
         self.stream_plan: List[Tuple[float, float, float]] = []
+        self.stack_run = 0
         sa = self.sa
         ticks = sa.ticks
         prev_end_t = None
@@ -319,7 +339,11 @@ class Placer:
                 x, y, h = 256.0 + float(self.rng.uniform(-60, 60)), 192.0 + float(self.rng.uniform(-40, 40)), self.cur.heading
             elif ev.stream and prev_stream and self.stream_plan:
                 x, y, h = self.stream_plan.pop(0)
+            elif self._stacks_here(ev, t - prev_end_t, beat_ms, prev_stream):
+                x, y, h = self.cur.x, self.cur.y, self.cur.heading      # a stack: same spot as the previous object
+                self.stack_run += 1
             else:
+                self.stack_run = 0
                 gap = t - prev_end_t
                 d = self._distance(ev, gap, beat_ms, sec.intensity, prev_stream)
                 if gap > 4 * beat_ms:
