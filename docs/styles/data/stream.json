@@ -3,7 +3,7 @@
  "min_stars": 4.5,
  "excluded": [
   "[dqs01733's Extra].osu",
-  "[Insane].osu"
+  "Yuaru - Asu no Yozora Shoukaihan (Akitoshi) [Insane].osu"
  ],
  "note": "Produced by tools/style_profiles.py --group stream --min-stars 4.5 with the two excluded maps (verified mislabeled) dropped. Small samples: with n=3 the p50 and p90 are the same map, so p90 understates the top of the range; treat every band as weak evidence.  Percentiles are picked by index (no interpolation).",
  "group": "stream",

@@ -1,12 +1,14 @@
 # Stream
 
-A Stream map is built around fast, continuous runs of circles placed close together, usually on 1/4 snaps (four notes per beat; no 1/8 gaps were found in any of the 11 maps). The player keeps one rhythm going while the cursor follows a path that bends across the screen. Related patterns that belong to the same style: bursts (3-7 notes), spaced streams (the circles sit further apart, so you need aim as well as speed), deathstreams (very long streams that test stamina), curved or S-shaped streams, and the stream breaks and kick sliders that let the player recover between runs. All numbers below were measured on human reference maps of 4.5 stars and up; the data is in [data/stream.json](data/stream.json).
+A Stream map is built around fast, continuous runs of circles placed close together, usually on 1/4 snaps (four notes per beat; no 1/8 gaps were found in any of the 11 maps). The player keeps one rhythm going while the cursor follows a path that bends across the screen. Related patterns that belong to the same style: bursts (4-7 notes; the metric is named `burst_runs_3_7` but counts runs of 4 to 7 objects), spaced streams (the circles sit further apart, so you need aim as well as speed), deathstreams (very long streams that test stamina), curved or S-shaped streams, and the stream breaks and kick sliders that let the player recover between runs. All numbers below were measured on human reference maps of 4.5 stars and up; the data is in [data/stream.json](data/stream.json).
 
 ## What it feels like
 
 You are tapping to the beat subdivision, not to the beat. A stream is a long fast line of notes, so most of the work is keeping the same finger rhythm while the cursor flows around a curve. In the maps I read, the circles in a stream are not in a straight line: they bend and loop (the mean turn between notes inside a stream is about 20-33 degrees (p10-p90 per band; single maps reach 40-43, for example Xenon's Extra 42.5), see "Signature patterns"), so it plays as a smooth, wide curve rather than a zig-zag.
 
 Mappers use it for the loud, dense part of a song: fast drum fills, guitar or synth runs, a chorus climax (kiai) that should feel like a wall of notes. Streams are rarely the whole map: in the measured data a stream window (10 s) makes up about 29% of a 4.5-5.5 star map, 38% at 5.5-6.5 and 48% at 6.5+ (mean share of 10-second windows labelled S in the timeline). The rest is jumps, sliders and mixed sections.
+
+The chorus claim was checked once with the kiai flags in the maps' timing sections (one-off script, not one of the two named tools; output in `references/_analysis/kiai_density.json`): 9 of the 11 maps have a higher object rate inside kiai than outside (ratio 0.90-3.28). Linada's Insane (0.93) and Sky Arrow (0.90) are slightly below 1. So streams do tend to sit in the loud part, but not in every map.
 
 What makes it hard, in order of how much it matters in the examples:
 
@@ -17,7 +19,7 @@ What makes it hard, in order of how much it matters in the examples:
 
 ## Measured profile
 
-Source: [data/stream.json](data/stream.json), made with `tools/style_profiles.py` from the maps listed in "Reference set". Each cell is **p10 / p50 / p90** (the value that 10%, 50% and 90% of the maps in that star band are below). Distances are in circle widths, from where the cursor leaves one object to the next head. "Sharp turn" means the cursor changes direction hard (turn angle near 180 degrees = straight back). Buzz and kick sliders are counts per whole map, not rates, and the maps range from about 1.2 to 7.7 minutes, so compare them loosely.
+Source: [data/stream.json](data/stream.json), made with `tools/style_profiles.py` from the maps listed in "Reference set". Each cell is **p10 / p50 / p90** (the value that 10%, 50% and 90% of the maps in that star band are below). Distances are in circle widths, from where the cursor leaves one object to the next head. "Sharp turn" = a turn angle of 120 degrees or more (180 = straight back); straight-on = 30 degrees or less. Buzz and kick sliders are counts per whole map, not rates, and the maps range from about 1.2 to 7.7 minutes, so compare them loosely.
 
 | Metric (p10 / p50 / p90) | 4.5-5.5 stars | 5.5-6.5 stars | 6.5+ stars |
 |---|---|---|---|
@@ -40,6 +42,12 @@ Source: [data/stream.json](data/stream.json), made with `tools/style_profiles.py
 | Longest tapping stretch (s) | 21.7 / 24.2 / 24.2 | 9.9 / 30 / 30.2 | 35.9 / 37.5 / 37.5 |
 | Longest fast-tap stretch (s) | 2 / 2 / 2 | 2 / 5 / 8 | 7 / 15 / 15 |
 | Total fast-tap time per map (s) | 2 / 12 / 12 | 10 / 30 / 50 | 74 / 116 / 116 |
+| Busiest 10 s (objects) | 62 / 73 / 73 | 73 / 89 / 105 | 93 / 113 / 113 |
+| Straight-on turns % | 9.8 / 19.2 / 19.2 | 18 / 33.9 / 37.7 | 30.1 / 37.6 / 37.6 |
+| Repeated 8-note patterns % (`rep8_pct`) | 0.4 / 2.9 / 2.9 | 0 / 13.6 / 13.8 | 10 / 27.1 / 27.1 |
+| AR | 9 / 9 / 9 | 8 / 9.3 / 9.5 | 9.5 / 9.5 / 9.5 |
+| OD | 7.8 / 8 / 8 | 8 / 9 / 9 | 9 / 9 / 9 |
+| CS | 3 / 4 / 4 | 4 / 4 / 4.2 | 4 / 4.2 / 4.2 |
 
 How to read this honestly:
 
@@ -49,10 +57,21 @@ How to read this honestly:
 - The stream run length median goes down in the top band (5) because two of its three maps (ABSOLUTION and Legend) have a median run of 5 notes, many short bursts between jumps; DISHONEST's median run is 25 notes. It does not mean the top-band streams are shorter, see the longest-run row.
 - Spread inside a band is large: in the 5.5-6.5 band stream spacing goes from 0.27 (Death, tightly packed notes) to 0.98 (Speedy Dog) over the five maps; the table shows 0.86 as p90.
 - The time share of each 10-second window type (mean of the timeline letters, from the same JSON): S (stream) 0.29 / 0.38 / 0.48, J (jump) 0.16 / 0.30 / 0.30, L (slider-heavy) 0.10 / 0.16 / 0.09, B (bursts) 0.07 / 0.05 / 0.03, rests (.) 0 / 0.02 / 0.04 for the three bands.
+- The stack % row hides the highest map too: in the 4.5-5.5 band smozit's Insane has 15.2% stacks (Xenon's Extra 0.6, Linada's Insane 8.4), and the p90 pick shows 8.4.
+
+**Gap mix (all 11 maps, 4.5+ stars; 12,059 gaps, summed from `snaps` in `metrics.json`, saved in `references/_analysis/gap_mix.json`).** 1/4 beat 51.7%, 1/2 beat 26.0%, 1 beat 15.5%, 3/2 beat 3.3%, 3/4 beat 0.6%, 1/3 beat 0.6%, 2/3 beat 0.2%, over 2 beats 1.2%. The remaining 0.9% fit none of the usual snaps. Half of all gaps are 1/4 beat, and almost all the rest are 1/2 and 1 beat.
+
+## Sections and breaks
+
+From the timeline strings (one letter per 10 s) of the 11 maps: the longest stretch of one repeated letter has a median of 4 windows (40 s) and a maximum of 8 windows (80 s). Rest windows (`.`, fewer than 3 objects in 10 s) are 2.7% of all windows pooled over the 11 maps and appear in 4 of the 11 maps. Break lengths are not measured; the gaps of 4 to 8 beats described under "Signature patterns" are readings of a few maps. The kiai result is under "What it feels like".
+
+Not measured yet: flow type (linear, angular, circular), cross-screen and 1-2 jumps, slider length and velocity, the glossary words Transition and Slider art. Deathstreams: the longest runs in the set are 129, 113 and 93 notes (see "What it feels like").
 
 ## Signature patterns
 
 What I saw by reading excerpts of the raw maps and the timeline strings. Statements marked "in the examples I read" are my reading of a handful of maps, not a measured statistic. The picture shows four of them: ![Stream patterns](img/stream.png)
+
+How to read the picture: numbers are play order, blue is first and orange is last; grey lines are the cursor path; a translucent band is a slider; x3 means three slides (two reverses). Each panel is a 1-4 second excerpt of one reference map. Known drawing flaw: in the top-left panel the AR label in the subtitle is partly covered by circles; the picture would need a re-render with clipping.
 
 **1. A stream is usually a smooth curve, and its spacing is constant inside a short run.** In DISHONEST (7.03 stars) most 29-note runs sit at 0.62-0.63 circle widths per note; some are wider (per-run means of 0.69-1.08 in the last stream block). The path bends in loops and S-curves rather than lines (top left of the picture). Inside one long run the spacing goes up in steps as the song builds: in the final stream of DISHONEST I read steps of about 0.63, then 0.78, then 0.93, then 1.27 circle widths, each held for 12-16 notes (the 29-note run starting at 267.5 s has a mean of 1.08 because it contains both the 0.93 and the 1.27 step). The measured mean turn inside streams (`stream_turn_mean_deg` in the data) is 24.2 degrees (p50, 4.5-5.5), 24.6 (5.5-6.5) and 29.9 (6.5+), which backs up "gentle curves".
 
@@ -79,7 +98,7 @@ What I saw by reading excerpts of the raw maps and the timeline strings. Stateme
 
 ## Pacing and breathers
 
-Your pacing rule is that a player should not spam-tap for longer than about 10-15 seconds, and sliders or buzz sliders should give a break to catch up (as in Honesty). Here is what the data says, with the measurement definitions first:
+Your pacing rule is that a player should not spam-tap for longer than about 10-15 seconds, and sliders or buzz sliders should give a break to catch up (as in Honesty). The only Honesty map in the data is DISHONEST (mapset HONESTY), which has a 68.1 s tapping stretch with no rest and a 44 s fast-tap stretch; its relief is the 3-slide sliders and 1-beat gaps described below. I cannot tell from the numbers whether those are the "Honesty" relief you meant, so please say if you meant something else. Here is what the data says, with the measurement definitions first:
 
 - Longest tapping stretch = seconds between rests, where a rest is a gap of at least 1.45 beats or a slider held at least 0.97 beat. A 1-beat gap after a short slider does not count as a rest.
 - Longest fast-tap stretch = consecutive 1-second bins with at least 8 key presses (real stream-speed tapping).
@@ -108,21 +127,21 @@ Measurable targets for a Stream-style map, taken straight from the p10-p90 range
   - Objects per minute about 263-264 (3 maps; the 5.5-6.5 range starts at 275).
   - Stream % 20.6-28.6 (Xenon's Extra, one of the 3 maps, is at 52.4, so treat the top as open); longest run 9 notes in the table (Xenon's Extra reaches 13); stream spacing 0.44-0.54 circle widths.
   - Jump distance mean 1.85-1.95, p90 2.54-2.65 circle widths; sharp turns 30-37%.
-  - Sliders 27.5-31%; slider repeat 7-12%; no buzz sliders; 3-6 kick sliders per map; stacks 0.6-8.4%.
-  - Longest tapping stretch 21.7-24.2 s; longest fast-tap stretch about 2 s.
+  - Sliders 27.5-31%; slider repeat 7-12%; no buzz sliders; 3-6 kick sliders per map; stacks 0.6-8.4% (smozit's Insane reaches 15.2%; 3 maps only).
+  - Longest fast-tap stretch about 2 s. (The human longest tapping stretch is 21.7-24.2 s, but that is not a target, see "All bands".)
 - 5.5-6.5 stars
   - Objects per minute 275-318; stream % 30.6-50.3.
   - Longest run 13-49 notes (one of the five maps has a 129-note run, so 49 is not a ceiling); median run about 9; stream spacing 0.27-0.86 (p10-p90; the full spread of the five maps is 0.27-0.98).
   - Jump distance mean 1.01-2.53, p90 2.11-3.65; sharp turns 7.2-36.1%.
   - Sliders 16.5-28.9%; slider repeat 0-27.9%; buzz sliders 0-9; kick sliders 0-9; stacks 0-7.2%.
-  - Odd rhythm 1.7-2.5%; longest tapping stretch 9.9-30.2 s; longest fast-tap stretch 2-8 s.
+  - Odd rhythm 1.7-2.5%; longest fast-tap stretch 2-8 s. (Human longest tapping stretch 9.9-30.2 s: not a target.)
 - 6.5+ stars
   - Objects per minute 335-345; stream % 41.2-56.7.
   - Longest run 33-93 notes (ABSOLUTION has a 113-note run, so 93 is not a ceiling); stream spacing 0.46-0.62.
   - Jump distance mean 2.1-2.52, p90 3.26-3.46; sharp turns 15.5-25.6%.
   - Sliders 10.5-19.8%; slider repeat 5.9-26.3%; buzz 0-4; kick sliders 3-5; stacks 2.7-6.3%; odd rhythm up to 0.4%.
-  - Longest tapping stretch 35.9-37.5 s; longest fast-tap stretch 7-15 s (one map of 3 reaches 44 s; do not copy that).
-- All bands: end runs on a beat, put a short slider or a 1-beat gap between runs, avoid fast-tap stretches over 10 s except in one climax section.
+  - Longest fast-tap stretch 7-15 s (one map of 3 reaches 44 s; do not copy that). (Human longest tapping stretch 35.9-37.5 s: not a target.)
+- All bands: end runs on a beat, put a short slider or a 1-beat gap between runs, avoid fast-tap stretches over 10 s except in one climax section. Longest tapping stretch: keep at 10 s or less (preset `max_tap_s`); do not use the human tapping-stretch ranges above as targets.
 
 Check a generated map against these numbers:
 
@@ -154,6 +173,7 @@ Sample sizes and weaknesses: 11 maps in 7 mapsets, 3 bands of 3, 5 and 3 maps. E
 
 ## See also
 
+- [Style documentation: start here](Instruction.md)
 - [Jump](jump.md)
 - [Tech](tech.md)
 - [Balanced](balanced.md)

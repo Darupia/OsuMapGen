@@ -2,10 +2,10 @@
  "style": "balanced",
  "min_stars": 4.5,
  "excluded": [
-  "The Eclipse].osu",
-  "Tortured Soul Extra].osu",
-  "Reform's Extra].osu",
-  "Envision].osu"
+  "Inferno (Monstrata) [The Eclipse].osu",
+  "Inferno (Monstrata) [Tortured Soul Extra].osu",
+  "Kanzen Kankaku Dreamer (Nevo) [Reform's Extra].osu",
+  "IMAGE -MATERIAL- Version 0 (pkk) [Envision].osu"
  ],
  "note": "Balanced = maps that mix streams, jumps and sliders and follow the music section by section (calm verses, intense choruses). Generator styles documented: 'mix' (per-section presets) and 'balanced' (single preset). Numbers are p10/p50/p90 per star band from tools/style_profiles.py (group balanced, 4.5 stars and up, 4 maps excluded as mislabeled by the audit). Weak evidence: the 4.5-5.5 band has 6 maps from 5 mapsets; the 5.5-6.5 band has 10 maps from 7 mapsets, but Kakushigoto [Insane] and [Insane AR10] are the same notes with a different AR (counted twice); the 6.5+ band has 3 files from 2 mapsets (Kakushigoto [CRN] and [CRN-AR10-] are the same notes with a different AR, plus Mousou Kajitsu [Climax]), so its p10/p50/p90 describe two distinct maps, not a distribution.",
  "group": "balanced",

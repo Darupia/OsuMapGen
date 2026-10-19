@@ -40,11 +40,13 @@ All cells are p10 - p50 - p90 over the maps in that band (from `data/jump.json`)
 | Odd rhythm (1/3, 1/6, 2/3, 3/4), % of gaps | 0-0-6.8 | 0-0-3 | 0.3 |
 | Longest tapping stretch (s) | 4.6-9.2-18.7 | 4.6-8.6-14.5 | 6.7 |
 | Longest fast-tap stretch (s) | 0-0-0 | 0-0-0 | 1 |
+| Total fast-tap time per map (s) | 0-0-0 | 0-0-0 | 1 |
+| Repeated 8-note patterns % (`rep8_pct`) | 0-0-0 | 0-0-0 | 0 |
 | AR | 8.8-9-9.2 | 9.2-9.3-9.4 | 9.4 |
 | OD | 8-8.5-9 | 8.6-9-9.3 | 9.3 |
 | CS | 3.4-4-4.2 | 3.5-3.8-4.3 | 4 |
 
-Rows left out because they are zero at p10, p50 and p90 in every band: stream %, run length median and max, stream spacing, stream turn angle, and burst runs (3 to 7 notes; the only exception is Mir's Insane, with 2 burst runs). In other words, the typical Jump map has no 4+ note streams. The one exception is Mir's Insane (Chikatto Chika Chika, 4.81 stars): 3.2% of its objects are in stream runs (2 runs, longest 5 notes, spacing 0.28 circle widths). Only 2 of 47 maps have any fast-tap stretch at all (both 1 s).
+The stream rows are zero in every band, so they are not tabled: stream %, run length median and max, stream spacing, stream turn angle, and burst runs (4 to 7 notes; the metric is named `burst_runs_3_7`; the only exception is Mir's Insane, with 2 burst runs). In other words, the typical Jump map has no 4+ note streams. The one exception is Mir's Insane (Chikatto Chika Chika, 4.81 stars): 3.2% of its objects are in stream runs (2 runs, longest 5 notes, spacing 0.28 circle widths). Only 2 of 47 maps have any fast-tap stretch at all (both 1 s).
 
 Timeline shares (mean over maps): 4.5-5.5 stars jump 53%, slider-heavy 29%, mixed 11%, rest 7%; 5.5-6.5 stars jump 64%, slider-heavy 27%, mixed 3%, rest 6%; the one 6.5+ map is 86% jump and 14% slider-heavy.
 
@@ -54,7 +56,7 @@ Other measurements over the 47 maps (summed from `metrics.json`): slider shapes 
 
 ![Jump patterns](img/jump.png)
 
-The picture shows four excerpts of 2.7 to 3.6 seconds from reference maps. Numbers are play order, blue is first and orange is last; grey lines are the cursor path. In the stack panel the two notes of a pair sit on the same spot, so only the later number is visible. Everything below that is marked "in the examples I read" is my reading of a few maps (excerpts of the raw maps and their timeline strings), not a statistic.
+The picture shows four excerpts of 2.7 to 3.6 seconds from reference maps. Numbers are play order, blue is first and orange is last; grey lines are the cursor path; a translucent band is a slider; x3 means three slides. The top-left panel (cRaZy, Backstabber set, 32.4-35.3 s, 5.62 stars) is the cross-screen jump excerpt (the panel title says "cross-screen jumps with short sliders"): 13 objects in 2.9 s, with circles spread over the whole playfield and a few short sliders. Known drawing flaws: in the top-left panel the subtitle is partly covered by circles 9 and 1, circles 4 and 12 in the top-right panel are cut by the frame, and the slider body in the bottom-left panel runs over its own title. The picture would need a re-render with clipping. In the stack panel the two notes of a pair sit on the same spot, so only the later number is visible. Everything below that is marked "in the examples I read" is my reading of a few maps (excerpts of the raw maps and their timeline strings), not a statistic.
 
 **Groups of half-beat circles, then a short slider, then a one-beat gap.** In the examples I read (Mekadon's Extra 20-45 s, Fearless Rockstar 40-62 s, Get Jinxed "Master" 5-50 s), the pulse is a group of 1 to 8 circles at 0.5 beat (Master has one 12-circle run that includes quarter-beat stack taps), then a slider that starts one beat after the last circle, then the next group. In Mekadon's Extra the groups are 1 to 4 circles with hops mostly 2.5 to 4.5 circle widths, and a 1.5-beat gap ends some phrases (7.5% of all gaps are 1.5 beats). In Fearless Rockstar the hops are mostly 3.5 to 5.4 circle widths, the biggest in the examples I read, with up to 8 circles in a row before a slider. Sliders are short: the median slide is 0.5 beat and 94 to 100% of sliders (p10 to p90) are under one beat.
 
@@ -68,7 +70,7 @@ The picture shows four excerpts of 2.7 to 3.6 seconds from reference maps. Numbe
 
 **Slider-led maps use sliders as the jump targets.** In Weedy's Extra (72.3% sliders), the sliders themselves are the half-beat jump targets, mostly 2 to 6 circle widths apart (1.1 to 5.8 in the stretch I read, 30-45 s), with 1.5-beat gaps appearing often between groups. Take Us To Vegas "Insane" (61.0% sliders) is a different slider-led case: sliders one beat apart, mostly 1.2 to 3.1 circle widths (median 2.3), with circles placed on the same spot as the neighbouring slider head (stacks of 2 or 3). With Xenon's Hi-Speed Expert (77.1%) and Rolniczy's Hi-Speed Expert (63.4%), these are the four most slider-heavy maps in the set; only 3 of the 47 maps are below 28% sliders.
 
-**Streams are not the way these maps build intensity.** The only stream-like passage is Mir's Insane (4.81 stars), where the longest run is 5 notes at 0.28 circle widths. The three maps removed from this set (see Reference set) were the ones with real streams: they had runs of up to 19 notes.
+**Streams are not the way these maps build intensity.** The only stream-like passage is Mir's Insane (4.81 stars), where the longest run is 5 notes at 0.28 circle widths. Two of the three removed maps (Recollection, Shii's Extra) had real streams with runs of 19 notes; the third (Ipas' Insane) was removed because it is almost all sliders (58.1%, longest run 5). See Reference set.
 
 ## Pacing and breathers
 
@@ -89,13 +91,22 @@ What the maps do instead of resting (note: the gap percentages below, 1-beat 29.
 - **The 1.5-beat gap** at the end of a phrase (7.5% of gaps; about half a second at 180 BPM).
 - **Longer gaps.** Only 1.0% of all gaps are longer than 2 beats. Examples in the excerpts: Reform's Expert (Chikatto) has a long slider that lasts about 3.75 beats (the next note comes 4 beats after its head), and Get Jinxed "Master" has two long sliders in a row at about 37.7 s and 38.7 s (heads 3 and 4 beats before the next note). These are held sliders, not empty pauses.
 - **Real breaks.** Timeline rest windows (fewer than 3 objects in 10 s) are 7% and 6% of windows in the two main bands. Thirteen of the 47 maps have one; 12 of them are the 30-second PADORU cuts, where I think the rest window is just the end of the map, so I would not read it as a mid-map break.
+- **Spinners.** 11 of the 47 maps contain a spinner, which is a break from tapping; this guide does not measure where they sit.
 - **Slider-heavy windows.** 29% and 27% of windows are slider-heavy, and 38 of the 47 maps have 28 to 48% sliders, so there is usually a slider to catch up on every few notes.
 
-For the generator, the practical reading is: a half-beat jump phrase of 8 to 10 seconds, then a slider or a 1.5 to 4 beat gap, matches the median human map. The human maps go past 15 seconds without a rest, but only about one map in seven.
+The median jump map's longest uninterrupted stretch is 8.6-9.2 s (p50 of `longest_tap_s`), so a generator that inserts a slider or a gap of 1.5-4 beats at least every 9-12 s stays at or below the median map (the jump preset caps tapping at `max_tap_s` = 12 s). Typical stretch length is not measured: the data stores only the longest stretch per map and counts over 10 s and 15 s. The human maps go past 15 seconds without a rest, but only about one map in seven.
+
+## Sections and breaks
+
+From the timeline strings (one letter per 10 s) of the 47 maps: the longest stretch of one repeated letter has a median of 4 windows (40 s) and a maximum of 11 windows (110 s). Rest windows are 4.5% of all windows pooled over the 47 maps (the per-map average share in the two main bands is 7% and 6%, as above) and appear in 13 of the 47 maps (12 of them are the 30-second PADORU cuts, see "Pacing and breathers"). Break lengths are not measured.
+
+Kiai (one-off script on the kiai flags, saved in `references/_analysis/kiai_density.json`): only 16 of the 47 maps have kiai flags, and in all 16 the object rate is higher inside kiai than outside (ratio 1.03-1.58). Most maps are short cuts, so this is weak evidence about whole songs.
+
+Not measured yet: flow type (linear, angular, circular), cross-screen jumps and 1-2 jumps (jump distance is measured, but there is no count of either pattern), slider length and velocity (SV), and the glossary words Transition and Slider art.
 
 ## Targets for the generator
 
-Ranges are the p10 to p90 of the human maps in the band. A generated Jump map should fall inside them. Where the human p90 for the longest tapping stretch is above 15 s, keep the generator under 15 s to follow your own pacing rule.
+Ranges are the p10 to p90 of the human maps in the band. A generated Jump map should fall inside them. Where the human p90 for the longest tapping stretch is above 15 s, keep the generator under 15 s to follow your own pacing rule (the jump preset uses `max_tap_s` = 12 s).
 
 **4.5-5.5 stars (28 maps, 8 mapsets)**
 
@@ -148,18 +159,70 @@ Excluded (verified mislabeled by the audit, so not Jump), all from Minstrel - Fi
 
 Below 4.5 stars the mapsets contain easier difficulties that are not representative of the style (38 maps, 1.66 to 4.46 stars), so they are not used.
 
+Every difficulty used (sorted by mapset and stars; the same difficulty name can occur in several mapsets, so the mapset is given):
+
+| Difficulty | Mapset | Stars | Band |
+|---|---|---|---|
+| Anzei's Another | PADORU | 4.97 | 4.5-5.5 |
+| Light's Expert | PADORU | 4.99 | 4.5-5.5 |
+| FuJu's Expert | PADORU | 5.11 | 4.5-5.5 |
+| Frontier's Expert | PADORU | 5.21 | 4.5-5.5 |
+| Deppy's Expert | PADORU | 5.27 | 4.5-5.5 |
+| SMOKELIND's Expert | PADORU | 5.34 | 4.5-5.5 |
+| iljaaz's Expert | PADORU | 5.37 | 4.5-5.5 |
+| Dorsalplum's Extra | PADORU | 5.40 | 4.5-5.5 |
+| AF's Extreme | PADORU | 5.66 | 5.5-6.5 |
+| Xenon's Hi-Speed Expert | PADORU | 5.69 | 5.5-6.5 |
+| Rolniczy's Hi-Speed Expert | PADORU | 5.71 | 5.5-6.5 |
+| Christmas Drift | PADORU | 5.83 | 5.5-6.5 |
+| skylaa's Extra | Backstabber | 5.29 | 4.5-5.5 |
+| AJT's Extra | Backstabber | 5.36 | 4.5-5.5 |
+| cRaZy | Backstabber | 5.62 | 5.5-6.5 |
+| Weedy's Extra | Backstabber | 5.69 | 5.5-6.5 |
+| Insane | Take Us To Vegas | 4.73 | 4.5-5.5 |
+| Extra | Take Us To Vegas | 5.70 | 5.5-6.5 |
+| Extreme | Take Us To Vegas | 6.21 | 5.5-6.5 |
+| Our Lives on the Run | Take Us To Vegas | 6.58 | 6.5+ |
+| AsuKo's Insane | Bubblegum Bitch | 4.73 | 4.5-5.5 |
+| Andrea's Insane | Bubblegum Bitch | 4.76 | 4.5-5.5 |
+| Tylerderp's Extra | Bubblegum Bitch | 5.22 | 4.5-5.5 |
+| Fuxi's Extra | Bubblegum Bitch | 5.25 | 4.5-5.5 |
+| PikA's Extra | Bubblegum Bitch | 5.26 | 4.5-5.5 |
+| Mekadon's Extra | Bubblegum Bitch | 5.46 | 4.5-5.5 |
+| Ram's Extra | Bubblegum Bitch | 5.62 | 5.5-6.5 |
+| kolman's Extra | Bubblegum Bitch | 5.67 | 5.5-6.5 |
+| KPMY's Extra | Bubblegum Bitch | 5.78 | 5.5-6.5 |
+| Barbie Girl | Bubblegum Bitch | 5.94 | 5.5-6.5 |
+| Another | Determinate | 4.70 | 4.5-5.5 |
+| Kuki's Expert | Determinate | 5.12 | 4.5-5.5 |
+| Kumocha's Expert | Determinate | 5.26 | 4.5-5.5 |
+| Reform's Expert | Determinate | 5.26 | 4.5-5.5 |
+| Mita's Extra | Determinate | 5.40 | 4.5-5.5 |
+| PikA's Extra | Determinate | 5.52 | 5.5-6.5 |
+| Fearless Rockstar | Determinate | 5.75 | 5.5-6.5 |
+| Irrelvis' Diamond | Get Jinxed | 5.47 | 4.5-5.5 |
+| Master | Get Jinxed | 5.64 | 5.5-6.5 |
+| Mismagius' Challenger | Get Jinxed | 6.03 | 5.5-6.5 |
+| Cookie-Triangle-Spicy-Cookie | Cookie-Butter-Choco-Cookie | 4.53 | 4.5-5.5 |
+| Irre's Extra | Cookie-Butter-Choco-Cookie | 4.97 | 4.5-5.5 |
+| Shiinoha's Insane | Chikatto Chika Chika | 4.57 | 4.5-5.5 |
+| Mir's Insane | Chikatto Chika Chika | 4.81 | 4.5-5.5 |
+| Reform's Expert | Chikatto Chika Chika | 5.11 | 4.5-5.5 |
+| Extra | Chikatto Chika Chika | 5.58 | 5.5-6.5 |
+| Sotarks' 1+2 IQ | Chikatto Chika Chika | 5.80 | 5.5-6.5 |
+
 Weak spots in the evidence:
 
 - The 6.5+ band has 1 map, so no range can be given.
 - The 5.5-6.5 band has 18 maps from 7 mapsets and the 4.5-5.5 band 28 maps from 8 mapsets. Several mapsets contribute 10 or 12 difficulties each (PADORU 12, Bubblegum Bitch 10, Determinate 7), so a few mapping styles weigh heavily in the percentiles.
 - Four of 8 mapsets are labelled nightcore, sped-up or cut in their titles (PADORU is also only a 30-second excerpt), and the maps run only 0.5 to 2.2 minutes, so tapping-stretch maxima and pacing statements are limited by length. The 12 PADORU maps are 30-second cuts.
 - Weedy's Extra (72.3% sliders, 15 kick sliders) was not removed by the audit, but its slider-led character differs from most of the set; it and two other slider-heavy maps lift the 5.5-6.5 slider p90.
-- One map (Irre's Extra, 4.97 stars) uses CS 7.0, much smaller circles than the rest (CS 3.0 to 4.5), so its distances in circle widths are not directly comparable. It has the largest single jump in the set (7.99 circle widths).
+- One map (Irre's Extra, 4.97 stars) uses CS 7.0 (circles much smaller than the rest, CS 3.0 to 4.5). Its distances are already in circle widths, but at that size the same distance is harder to hit, so it flatters the jump numbers; consider excluding it. It has the largest single jump in the set (7.99 circle widths).
 - The pattern descriptions come from reading excerpts of a handful of maps; the numbers are measured, the "in the examples I read" statements are not statistics.
 
 ## See also
 
-- [Style documentation: start here](../styles/Instruction.md)
+- [Style documentation: start here](Instruction.md)
 - [Stream](stream.md)
 - [Tech](tech.md)
 - [Balanced](balanced.md)
